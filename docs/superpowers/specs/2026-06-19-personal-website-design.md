@@ -112,7 +112,7 @@ middleware.ts         # Redirects unauthenticated users away from /dashboard
 
 ### Layout
 - Persistent sidebar navigation
-- Links to: Email Hub, Kanban, Blog Editor, (future: Properties, Tax, Budget, Assistant)
+- Links to: Email Hub, Kanban, Blog Editor, Calendar, (future: Properties, Tax, Budget, Assistant)
 - User avatar and logout button
 
 ### Email Hub (`/dashboard/email`)
@@ -135,6 +135,15 @@ middleware.ts         # Redirects unauthenticated users away from /dashboard
 - Create/edit post: title, slug (auto-generated, editable), cover image upload, Tiptap rich text body
 - Toggle publish/draft status
 - Delete post
+
+### Calendar (`/dashboard/calendar`)
+- Unified calendar view combining personal and work calendars
+- Connect multiple Google Calendar and Outlook/Microsoft 365 calendar accounts via OAuth
+- Month, week, and day views
+- Create, edit, and delete events from the dashboard
+- Colour-coded calendars per account/calendar source
+- Events synced bidirectionally — changes made in the dashboard reflect in the source calendar
+- Quick-add event from anywhere in the dashboard
 
 ---
 
