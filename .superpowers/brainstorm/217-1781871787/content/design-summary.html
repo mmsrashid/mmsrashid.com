@@ -1,0 +1,82 @@
+<h2>mmsrashid.com — Full Design Summary</h2>
+<p class="subtitle">Approve this before we write the spec</p>
+
+<div style="display: flex; flex-direction: column; gap: 20px; margin-top: 20px;">
+
+  <!-- Stack -->
+  <div style="padding: 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.03);">
+    <div class="label" style="margin-bottom: 10px;">⚙️ Stack</div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px;">
+      <span style="background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px;">Next.js 14 (App Router)</span>
+      <span style="background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px;">TypeScript</span>
+      <span style="background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px;">Tailwind CSS</span>
+      <span style="background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px;">Supabase (Auth + Postgres + Storage)</span>
+      <span style="background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px;">Vercel</span>
+      <span style="background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 20px;">Tiptap (rich text)</span>
+    </div>
+  </div>
+
+  <!-- Public -->
+  <div style="padding: 16px; border-radius: 10px; border: 1px solid #4ade80; background: rgba(74,222,128,0.04);">
+    <div class="label" style="color: #4ade80; margin-bottom: 10px;">🌐 Public Site — mmsrashid.com</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+      <div style="background: rgba(74,222,128,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">/ Home</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Hero, bio, nav to portfolio/CV/blog</div>
+      </div>
+      <div style="background: rgba(74,222,128,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">/portfolio</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Project cards with tech tags & links</div>
+      </div>
+      <div style="background: rgba(74,222,128,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">/cv</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Timeline, skills, PDF download</div>
+      </div>
+      <div style="background: rgba(74,222,128,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">/blog + /blog/[slug]</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Rich text posts, publish from dashboard</div>
+      </div>
+      <div style="background: rgba(74,222,128,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">/login</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Supabase Auth, redirects to dashboard</div>
+      </div>
+      <div style="background: rgba(74,222,128,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">💬 Chat widget</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Visitor contact capture, all pages</div>
+      </div>
+    </div>
+    <div style="margin-top: 10px; font-size: 12px; opacity: 0.6;">LinkedIn + GitHub links throughout. Static rendering for all public pages.</div>
+  </div>
+
+  <!-- Private -->
+  <div style="padding: 16px; border-radius: 10px; border: 1px solid #60a5fa; background: rgba(96,165,250,0.04);">
+    <div class="label" style="color: #60a5fa; margin-bottom: 10px;">🔒 Private Dashboard — /dashboard</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+      <div style="background: rgba(96,165,250,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">📬 Email Hub</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Multiple Gmail/Outlook accounts, unified inbox, visitor messages</div>
+      </div>
+      <div style="background: rgba(96,165,250,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">📋 Kanban</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Idea → To Do → In Progress → Done, drag & drop</div>
+      </div>
+      <div style="background: rgba(96,165,250,0.08); border-radius: 6px; padding: 10px 12px;">
+        <div style="font-weight: 500; font-size: 14px;">✍️ Blog Editor</div>
+        <div style="font-size: 12px; opacity: 0.65; margin-top: 2px;">Tiptap rich text, draft/publish, cover image</div>
+      </div>
+    </div>
+    <div style="margin-top: 10px; font-size: 12px; opacity: 0.6;">Sidebar layout. Supabase session protects all /dashboard routes via Next.js middleware.</div>
+  </div>
+
+  <!-- Future -->
+  <div style="padding: 14px; border-radius: 10px; border: 1px dashed rgba(255,255,255,0.15); background: rgba(255,255,255,0.02);">
+    <div class="label" style="margin-bottom: 8px; opacity: 0.5;">📅 Future phases</div>
+    <div style="font-size: 13px; opacity: 0.5; display: flex; gap: 16px; flex-wrap: wrap;">
+      <span>🤖 AI Assistant</span>
+      <span>🏠 Property Management</span>
+      <span>💰 UK Tax Returns</span>
+      <span>📊 Budget Planner</span>
+    </div>
+  </div>
+
+</div>
