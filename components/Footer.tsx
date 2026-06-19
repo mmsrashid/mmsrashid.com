@@ -5,7 +5,7 @@ export default function Footer() {
         <span>© {new Date().getFullYear()} Mohammed Rashid</span>
         <div className="flex gap-6">
           <a
-            href="https://linkedin.com/in/mmsrashid"
+            href="https://www.linkedin.com/in/mmsrashid/"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-gray-900 transition-colors"

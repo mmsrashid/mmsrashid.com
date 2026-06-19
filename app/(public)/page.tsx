@@ -29,7 +29,7 @@ export default function HomePage() {
             Download CV
           </Link>
           <a
-            href="https://linkedin.com/in/mmsrashid"
+            href="https://www.linkedin.com/in/mmsrashid/"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center px-6 py-3 border border-gray-200 text-gray-700 rounded-lg font-medium hover:border-gray-400 transition-colors"
