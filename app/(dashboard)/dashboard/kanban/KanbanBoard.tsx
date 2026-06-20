@@ -30,7 +30,7 @@ interface Card {
   id: string
   title: string
   description: string
-  column: string
+  status: string
   position: number
   tags: string[]
   due_date: string | null
@@ -70,7 +70,7 @@ function KanbanCard({ card, onDelete }: { card: Card; onDelete: (id: string) => 
   )
 }
 
-function AddCardForm({ column, onAdd }: { column: string; onAdd: (card: Card) => void }) {
+function AddCardForm({ colId, onAdd }: { colId: string; onAdd: (card: Card) => void }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const supabase = createBrowserClient(
@@ -83,7 +83,7 @@ function AddCardForm({ column, onAdd }: { column: string; onAdd: (card: Card) =>
     if (!title.trim()) return
     const { data } = await supabase
       .from('kanban_cards')
-      .insert({ title: title.trim(), column, position: 0 })
+      .insert({ title: title.trim(), status: colId, position: 0 })
       .select()
       .single()
     if (data) { onAdd(data); setTitle(''); setOpen(false) }
@@ -121,8 +121,8 @@ export default function KanbanBoard({ initialCards }: { initialCards: Card[] }) 
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
 
-  function cardsInCol(col: string) {
-    return cards.filter((c) => c.column === col).sort((a, b) => a.position - b.position)
+  function cardsInCol(colId: string) {
+    return cards.filter((c) => c.status === colId).sort((a, b) => a.position - b.position)
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -131,12 +131,11 @@ export default function KanbanBoard({ initialCards }: { initialCards: Card[] }) 
     const activeCard = cards.find((c) => c.id === active.id)
     if (!activeCard) return
 
-    // Determine target column: either over a card (use its column) or over a column droppable
     const overCard = cards.find((c) => c.id === over.id)
-    const targetCol = overCard ? overCard.column : (COLUMNS.find((c) => c.id === over.id)?.id ?? activeCard.column)
+    const targetStatus = overCard ? overCard.status : (COLUMNS.find((c) => c.id === over.id)?.id ?? activeCard.status)
 
-    if (activeCard.column !== targetCol) {
-      setCards((prev) => prev.map((c) => c.id === activeCard.id ? { ...c, column: targetCol } : c))
+    if (activeCard.status !== targetStatus) {
+      setCards((prev) => prev.map((c) => c.id === activeCard.id ? { ...c, status: targetStatus } : c))
     }
   }
 
@@ -147,14 +146,14 @@ export default function KanbanBoard({ initialCards }: { initialCards: Card[] }) 
     const activeCard = cards.find((c) => c.id === active.id)!
     const overCard = cards.find((c) => c.id === over.id)
 
-    if (overCard && activeCard.id !== overCard.id && activeCard.column === overCard.column) {
-      const colCards = cardsInCol(activeCard.column)
+    if (overCard && activeCard.id !== overCard.id && activeCard.status === overCard.status) {
+      const colCards = cardsInCol(activeCard.status)
       const oldIdx = colCards.findIndex((c) => c.id === activeCard.id)
       const newIdx = colCards.findIndex((c) => c.id === overCard.id)
       const reordered = arrayMove(colCards, oldIdx, newIdx)
 
       setCards((prev) => {
-        const others = prev.filter((c) => c.column !== activeCard.column)
+        const others = prev.filter((c) => c.status !== activeCard.status)
         return [...others, ...reordered.map((c, i) => ({ ...c, position: i }))]
       })
 
@@ -162,7 +161,7 @@ export default function KanbanBoard({ initialCards }: { initialCards: Card[] }) 
         supabase.from('kanban_cards').update({ position: i }).eq('id', c.id)
       ))
     } else {
-      await supabase.from('kanban_cards').update({ column: activeCard.column }).eq('id', activeCard.id)
+      await supabase.from('kanban_cards').update({ status: activeCard.status }).eq('id', activeCard.id)
     }
   }
 
@@ -189,7 +188,7 @@ export default function KanbanBoard({ initialCards }: { initialCards: Card[] }) 
                   ))}
                 </div>
               </SortableContext>
-              <AddCardForm column={col.id} onAdd={(card) => setCards((prev) => [...prev, card])} />
+              <AddCardForm colId={col.id} onAdd={(card) => setCards((prev) => [...prev, card])} />
             </div>
           )
         })}

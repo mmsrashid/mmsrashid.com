@@ -2,7 +2,7 @@ create table public.kanban_cards (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   description text not null default '',
-  column text not null default 'todo' check (column in ('idea', 'todo', 'in_progress', 'done')),
+  status text not null default 'todo' check (status in ('idea', 'todo', 'in_progress', 'done')),
   position integer not null default 0,
   tags text[] not null default '{}',
   due_date date,
