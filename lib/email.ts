@@ -100,7 +100,7 @@ export async function listMessages(folder = 'INBOX', limit = 50): Promise<EmailM
           from: fromStr,
           fromName,
           to: msg.envelope.to?.[0]
-            ? `${msg.envelope.to[0].mailbox}@${msg.envelope.to[0].host}`
+            ? (msg.envelope.to[0].address || (msg.envelope.to[0].mailbox && msg.envelope.to[0].host ? `${msg.envelope.to[0].mailbox}@${msg.envelope.to[0].host}` : ''))
             : '',
           subject: msg.envelope.subject || '(no subject)',
           date: msg.envelope.date?.toISOString() || new Date().toISOString(),
@@ -157,7 +157,7 @@ export async function getMessage(uid: number, folder = 'INBOX'): Promise<EmailDe
         from: fromStr,
         fromName,
         to: msg.envelope.to?.[0]
-          ? `${msg.envelope.to[0].mailbox}@${msg.envelope.to[0].host}`
+          ? (msg.envelope.to[0].address || (msg.envelope.to[0].mailbox && msg.envelope.to[0].host ? `${msg.envelope.to[0].mailbox}@${msg.envelope.to[0].host}` : ''))
           : '',
         subject: msg.envelope.subject || '(no subject)',
         date: msg.envelope.date?.toISOString() || new Date().toISOString(),
