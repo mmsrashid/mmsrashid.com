@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
+import JarvisOrb from '@/components/JarvisOrb'
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: '⊞' },
@@ -61,6 +62,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
+      <JarvisOrb />
     </div>
   )
 }
