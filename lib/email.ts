@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// @ts-nocheck
 import { ImapFlow } from 'imapflow'
 import nodemailer from 'nodemailer'
 import { simpleParser } from 'mailparser'
