@@ -73,10 +73,13 @@ export async function listMessages(folder = 'INBOX', limit = 50): Promise<EmailM
         bodyParts: ['1'],
       })) {
         const from = msg.envelope.from?.[0]
+        const fromAddr = from
+          ? (from.address || (from.mailbox && from.host ? `${from.mailbox}@${from.host}` : null))
+          : null
         const fromStr = from
-          ? `${from.name || ''} <${from.mailbox}@${from.host}>`
+          ? (from.name ? `${from.name} <${fromAddr || 'unknown'}>` : (fromAddr || 'Unknown'))
           : 'Unknown'
-        const fromName = from?.name || `${from?.mailbox}@${from?.host}` || 'Unknown'
+        const fromName = from?.name || fromAddr || 'Unknown'
 
         // Get plain text preview from body part 1
         let preview = ''
@@ -140,10 +143,13 @@ export async function getMessage(uid: number, folder = 'INBOX'): Promise<EmailDe
       const parsed = await simpleParser(msg.source as Buffer)
 
       const from = msg.envelope.from?.[0]
+      const fromAddr = from
+        ? (from.address || (from.mailbox && from.host ? `${from.mailbox}@${from.host}` : null))
+        : null
       const fromStr = from
-        ? `${from.name || ''} <${from.mailbox}@${from.host}>`
+        ? (from.name ? `${from.name} <${fromAddr || 'unknown'}>` : (fromAddr || 'Unknown'))
         : 'Unknown'
-      const fromName = from?.name || `${from?.mailbox}@${from?.host}` || 'Unknown'
+      const fromName = from?.name || fromAddr || 'Unknown'
 
       return {
         uid: msg.uid,
