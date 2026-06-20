@@ -7,7 +7,7 @@ export default async function CalendarPage() {
   if (!user) redirect('/login')
 
   return (
-    <div className="p-8">
+    <div className="p-8 overflow-y-auto h-full">
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Calendar</h1>
       <p className="text-sm text-gray-500">Google Calendar + Outlook sync — coming soon.</p>
     </div>

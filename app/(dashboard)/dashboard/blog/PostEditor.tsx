@@ -62,7 +62,7 @@ export default function PostEditor({ initial }: { initial: Post }) {
   }
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-8 max-w-3xl overflow-y-auto h-full">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-900">{post.id ? 'Edit post' : 'New post'}</h1>
         <div className="flex items-center gap-2">
