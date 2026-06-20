@@ -10,7 +10,7 @@ const IMAP_CONFIG = {
     user: process.env.ZOHO_EMAIL!,
     pass: process.env.ZOHO_APP_PASSWORD!,
   },
-  logger: false,
+  logger: false as const,
 }
 
 const SMTP_CONFIG = {
