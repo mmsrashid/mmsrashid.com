@@ -61,7 +61,6 @@ async function fetchEventsForAccount(
   }
 
   const data = await res.json()
-  console.log(`Calendar (${account}): ${data.items?.length ?? 0} events, nextPageToken=${data.nextPageToken ?? 'none'}`)
   return (data.items ?? []).map((item: any): CalendarEvent => {
     const allDay = Boolean(item.start?.date && !item.start?.dateTime)
     return {
