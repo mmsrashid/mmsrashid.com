@@ -14,7 +14,7 @@ export default async function CalendarPage() {
   const timeMin = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
   const timeMax = new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString()
 
-  let events = []
+  let events: import('@/lib/google-calendar').CalendarEvent[] = []
   try {
     events = await getCalendarEvents(timeMin, timeMax)
   } catch (e) {
