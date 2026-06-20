@@ -4,7 +4,7 @@ export default function CVPage() {
       <div className="flex items-start justify-between mb-10">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-1">Mohammed Rashid</h1>
-          <p className="text-gray-500">Product Executive | AI Systems &amp; Vertical Health Strategy</p>
+          <p className="text-gray-500">Senior Product Manager · London</p>
           <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-500">
             <span>London</span>
             <a href="mailto:m@mrashid.co" className="hover:text-gray-900">m@mrashid.co</a>
@@ -25,7 +25,7 @@ export default function CVPage() {
       <section className="mb-10">
         <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-400 mb-4">Executive Summary</h2>
         <p className="text-sm text-gray-600 leading-relaxed">
-          Commercial Product Leader (UCL MEng) specializing in "Vertical Health Flywheels" that bridge frontier AI research with high-scale e-commerce. Expert in Dual-Agent AI deployment (Companion + Co-Pilot), managing £2M+ annual capital allocations, and scaling revenue to £500k/month. Proven ability to orchestrate £1M+ technical launches and transform clinical Real-World Evidence (RWE) into high-margin digital ecosystems.
+          Product Manager with an engineering background (MEng, UCL) and a track record of shipping in high-stakes, fast-moving environments. I've taken products from zero — a clinic scaled to £1.2M, a health platform to £100k MRR, an AI system that cut clinical admin by 80%. I work across the full product surface: discovery, roadmap, engineering, commercial. Strongest in products where technical depth and user empathy both matter.
         </p>
       </section>
 

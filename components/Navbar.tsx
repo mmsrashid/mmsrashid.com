@@ -3,7 +3,7 @@ import Link from 'next/link'
 const links = [
   { label: 'Portfolio', href: '/portfolio' },
   { label: 'CV', href: '/cv' },
-  { label: 'Blog', href: '/blog' },
+  { label: 'Writing', href: '/blog' },
 ]
 
 export default function Navbar() {
