@@ -10,5 +10,10 @@ export async function GET(request: NextRequest) {
     await supabase.auth.exchangeCodeForSession(code)
   }
 
+  const type = searchParams.get('type')
+  if (type === 'recovery') {
+    return NextResponse.redirect(`${origin}/auth/update-password`)
+  }
+
   return NextResponse.redirect(`${origin}/dashboard`)
 }
