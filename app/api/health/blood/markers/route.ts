@@ -1,6 +1,49 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+/**
+ * Adds a marker to the shared catalogue so a lab name we don't recognise can be
+ * filed without a code change. The catalogue is global, hence the exact-name
+ * conflict guard rather than a per-user row.
+ */
+export async function POST(req: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json()
+  const name = String(body.name ?? '').trim()
+  const category = String(body.category ?? '').trim()
+  if (!name) return NextResponse.json({ error: 'A marker name is required.' }, { status: 400 })
+  if (!category) return NextResponse.json({ error: 'A category is required.' }, { status: 400 })
+
+  const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v))
+
+  const { data: existing } = await supabase
+    .from('health_blood_markers')
+    .select('*')
+    .ilike('name', name)
+    .maybeSingle()
+  if (existing) return NextResponse.json({ marker: existing, created: false })
+
+  const { data, error } = await supabase
+    .from('health_blood_markers')
+    .insert({
+      name,
+      short_name: body.short_name ? String(body.short_name).trim() : null,
+      category,
+      unit: body.unit ? String(body.unit).trim() : null,
+      ref_low: num(body.ref_low),
+      ref_high: num(body.ref_high),
+      description: body.description ? String(body.description).trim() : null,
+    })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ marker: data, created: true })
+}
+
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

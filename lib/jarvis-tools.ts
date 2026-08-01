@@ -1,8 +1,16 @@
 import type Anthropic from '@anthropic-ai/sdk'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { listMessages } from '@/lib/email'
 import { getCalendarEvents } from '@/lib/google-calendar'
+import { HEALTH_TOOLS, HEALTH_TOOL_NAMES, executeHealthTool } from '@/lib/health/jarvis-tools'
 
-export const TOOLS: Anthropic.Tool[] = [
+/** Passed through so health tools can query the caller's records under RLS. */
+export interface ToolContext {
+  supabase: SupabaseClient
+  userId: string
+}
+
+const BASE_TOOLS: Anthropic.Tool[] = [
   {
     name: 'get_emails',
     description: 'Fetch recent emails from the inbox. Use when asked about emails, messages, or what is in the inbox.',
@@ -42,10 +50,18 @@ export const TOOLS: Anthropic.Tool[] = [
   },
 ]
 
+export const TOOLS: Anthropic.Tool[] = [...BASE_TOOLS, ...HEALTH_TOOLS]
+
 export async function executeTool(
   name: string,
   input: Record<string, unknown>,
+  ctx?: ToolContext,
 ): Promise<string> {
+  if (HEALTH_TOOL_NAMES.has(name)) {
+    if (!ctx) return 'Health records are unavailable in this context.'
+    return executeHealthTool(name, input, ctx.supabase, ctx.userId)
+  }
+
   if (name === 'get_current_time') {
     return new Date().toLocaleString('en-GB', {
       weekday: 'long', year: 'numeric', month: 'long',
