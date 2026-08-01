@@ -171,18 +171,19 @@ export default function HealthShell({ children }: Props) {
         }}
         style={{
           width,
-          background: '#111',
+          background: '#fff',
+          borderRight: '1px solid #e5e7eb',
           display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
           transition: 'width .2s',
           overflow: 'hidden',
-          outline: dragging ? '2px dashed #1d4ed8' : 'none',
+          outline: dragging ? '2px dashed #2563eb' : 'none',
           outlineOffset: -4,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 12px', borderBottom: '1px solid #1f2937' }}>
-          {sidebarOpen && <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>◉ &nbsp;JARVIS</span>}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 12px', borderBottom: '1px solid #e5e7eb' }}>
+          {sidebarOpen && <span style={{ color: '#111', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>◉ &nbsp;JARVIS</span>}
           <button onClick={() => setSidebarOpen(o => !o)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 14 }}>
             {sidebarOpen ? '←' : '→'}
           </button>
@@ -195,8 +196,9 @@ export default function HealthShell({ children }: Props) {
                 <div key={i} style={{
                   fontSize: 11, lineHeight: 1.5, padding: '7px 9px', borderRadius: 10, maxWidth: '95%',
                   whiteSpace: 'pre-wrap',
-                  background: m.role === 'ai' ? '#1d4ed8' : '#1f2937',
-                  color: m.role === 'ai' ? '#fff' : '#d1d5db',
+                  background: m.role === 'ai' ? '#eff6ff' : '#f3f4f6',
+                  border: `1px solid ${m.role === 'ai' ? '#dbeafe' : '#e5e7eb'}`,
+                  color: m.role === 'ai' ? '#1e40af' : '#374151',
                   alignSelf: m.role === 'ai' ? 'flex-start' : 'flex-end',
                 }}>
                   {m.text || (loading && m.role === 'ai' ? '…' : '')}
@@ -204,7 +206,7 @@ export default function HealthShell({ children }: Props) {
               ))}
 
               {uploading && (
-                <div style={{ fontSize: 11, color: '#9ca3af', padding: '7px 9px' }}>Reading the document…</div>
+                <div style={{ fontSize: 11, color: '#6b7280', padding: '7px 9px' }}>Reading the document…</div>
               )}
 
               {pending.length > 0 && (
@@ -217,14 +219,14 @@ export default function HealthShell({ children }: Props) {
             </div>
 
             {dragging && (
-              <div style={{ fontSize: 10, color: '#93c5fd', textAlign: 'center', padding: '0 10px 6px' }}>Drop to file it</div>
+              <div style={{ fontSize: 10, color: '#2563eb', fontWeight: 600, textAlign: 'center', padding: '0 10px 6px' }}>Drop to file it</div>
             )}
 
-            <div style={{ padding: 8, borderTop: '1px solid #1f2937', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ padding: 8, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6, alignItems: 'center' }}>
               <button
                 onClick={() => fileInput.current?.click()}
                 title="Attach a PDF or image"
-                style={{ background: '#1f2937', border: 'none', borderRadius: 8, color: '#9ca3af', cursor: 'pointer', fontSize: 13, padding: '6px 9px', flexShrink: 0 }}
+                style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, color: '#6b7280', cursor: 'pointer', fontSize: 13, padding: '5px 9px', flexShrink: 0 }}
               >📎</button>
               <input
                 ref={fileInput}
@@ -242,7 +244,7 @@ export default function HealthShell({ children }: Props) {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && send()}
                 placeholder="Ask, or paste a screenshot…"
-                style={{ flex: 1, minWidth: 0, background: '#1f2937', border: 'none', borderRadius: 8, padding: '7px 10px', color: '#fff', fontSize: 11, outline: 'none' }}
+                style={{ flex: 1, minWidth: 0, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 10px', color: '#111', fontSize: 11, outline: 'none' }}
               />
             </div>
           </>

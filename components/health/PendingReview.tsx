@@ -20,10 +20,10 @@ const KIND_LABEL: Record<PendingRecord['kind'], string> = {
 }
 
 const input: React.CSSProperties = {
-  background: '#111827',
-  border: '1px solid #374151',
+  background: '#fff',
+  border: '1px solid #d1d5db',
   borderRadius: 6,
-  color: '#fff',
+  color: '#111',
   fontSize: 10,
   padding: '4px 6px',
   width: '100%',
@@ -57,13 +57,13 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
   }
 
   return (
-    <div style={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 10, padding: 9, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontSize: 10, color: '#fbbf24', fontWeight: 600 }}>
+    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: 9, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 10, color: '#92400e', fontWeight: 700 }}>
         Needs your check — I wasn&apos;t confident about these
       </div>
 
       {rows.map((row, i) => (
-        <div key={i} style={{ background: '#111827', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div key={i} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'pointer' }}>
             <input
               type="checkbox"
@@ -71,9 +71,9 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
               onChange={e => setChosen(c => c.map((v, j) => (j === i ? e.target.checked : v)))}
               style={{ marginTop: 2, flexShrink: 0 }}
             />
-            <span style={{ fontSize: 10, color: '#e5e7eb', fontWeight: 600 }}>
+            <span style={{ fontSize: 10, color: '#111', fontWeight: 600 }}>
               {KIND_LABEL[row.kind]}
-              <span style={{ display: 'block', color: '#9ca3af', fontWeight: 400, marginTop: 1 }}>{row.reason}</span>
+              <span style={{ display: 'block', color: '#6b7280', fontWeight: 400, marginTop: 1 }}>{row.reason}</span>
             </span>
           </label>
 
@@ -153,7 +153,8 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
           onClick={apply}
           disabled={saving || selectedCount === 0}
           style={{
-            flex: 1, background: selectedCount ? '#1d4ed8' : '#374151', color: '#fff', border: 'none',
+            flex: 1, background: selectedCount ? '#1d4ed8' : '#e5e7eb',
+            color: selectedCount ? '#fff' : '#9ca3af', border: 'none',
             borderRadius: 7, padding: '6px 10px', fontSize: 10, fontWeight: 600,
             cursor: selectedCount && !saving ? 'pointer' : 'not-allowed',
           }}
@@ -163,7 +164,7 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
         <button
           onClick={onDismiss}
           disabled={saving}
-          style={{ background: '#374151', color: '#d1d5db', border: 'none', borderRadius: 7, padding: '6px 10px', fontSize: 10, cursor: 'pointer' }}
+          style={{ background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 7, padding: '6px 10px', fontSize: 10, cursor: 'pointer' }}
         >
           Discard
         </button>
