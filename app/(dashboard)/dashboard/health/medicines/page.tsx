@@ -5,18 +5,32 @@ import type { HealthMedicine } from '@/lib/health/types'
 export default function MedicinesPage() {
   const [medicines, setMedicines] = useState<HealthMedicine[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', dose: '', dose_unit: 'mg', frequency: '', route: 'oral', start_date: '', prescribing_doctor: '', notes: '' })
+  const [error, setError] = useState('')
+  const emptyForm = { name: '', dose: '', dose_unit: 'mg', frequency: '', route: 'oral', start_date: '', prescribing_doctor: '', notes: '' }
+  const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
     fetch('/api/health/medicines').then(r => r.json()).then(d => setMedicines(Array.isArray(d) ? d : []))
   }, [])
 
   async function save() {
-    const body = { ...form, dose: form.dose ? parseFloat(form.dose) : null }
+    if (!form.name.trim()) return setError('Name is required.')
+    // Blank optional fields must be null — Postgres rejects '' for date/numeric columns.
+    const body = {
+      ...form,
+      dose: form.dose ? parseFloat(form.dose) : null,
+      start_date: form.start_date || null,
+      frequency: form.frequency || null,
+      prescribing_doctor: form.prescribing_doctor || null,
+      notes: form.notes || null,
+    }
     const res = await fetch('/api/health/medicines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const m = await res.json()
+    if (!res.ok) return setError(m.error || 'Could not save medicine.')
     setMedicines(ms => [m, ...ms])
     setShowForm(false)
+    setForm(emptyForm)
+    setError('')
   }
 
   const active = medicines.filter(m => m.status === 'active')
@@ -40,9 +54,10 @@ export default function MedicinesPage() {
               </div>
             ))}
           </div>
+          {error && <p style={{ fontSize: 11, color: '#991b1b', background: '#fee2e2', borderRadius: 8, padding: '7px 10px', marginTop: 10 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button onClick={save} style={{ background: '#111', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Save</button>
-            <button onClick={() => setShowForm(false)} style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setShowForm(false); setError('') }} style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}

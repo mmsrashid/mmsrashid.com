@@ -5,22 +5,36 @@ import type { HealthAppointment } from '@/lib/health/types'
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<HealthAppointment[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ appointment_date: '', appointment_type: '', doctor_name: '', clinic_name: '', notes: '' })
+  const [error, setError] = useState('')
+  const emptyForm = { appointment_date: '', appointment_type: '', doctor_name: '', clinic_name: '', notes: '' }
+  const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
     fetch('/api/health/appointments').then(r => r.json()).then(d => setAppointments(Array.isArray(d) ? d : []))
   }, [])
 
   async function save() {
-    const res = await fetch('/api/health/appointments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+    // appointment_date and appointment_type are NOT NULL in the schema.
+    if (!form.appointment_date) return setError('Date is required.')
+    if (!form.appointment_type.trim()) return setError('Appointment type is required.')
+    const body = {
+      ...form,
+      doctor_name: form.doctor_name || null,
+      clinic_name: form.clinic_name || null,
+      notes: form.notes || null,
+    }
+    const res = await fetch('/api/health/appointments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const newAppt = await res.json()
+    if (!res.ok) return setError(newAppt.error || 'Could not save appointment.')
     setAppointments(a => [newAppt, ...a])
     setShowForm(false)
-    setForm({ appointment_date: '', appointment_type: '', doctor_name: '', clinic_name: '', notes: '' })
+    setForm(emptyForm)
+    setError('')
   }
 
-  const upcoming = appointments.filter(a => a.status === 'upcoming').sort((a, b) => a.appointment_date.localeCompare(b.appointment_date))
-  const past = appointments.filter(a => a.status !== 'upcoming').sort((a, b) => b.appointment_date.localeCompare(a.appointment_date))
+  const byDate = (a: string | null, b: string | null) => (a || '').localeCompare(b || '')
+  const upcoming = appointments.filter(a => a.status === 'upcoming').sort((a, b) => byDate(a.appointment_date, b.appointment_date))
+  const past = appointments.filter(a => a.status !== 'upcoming').sort((a, b) => byDate(b.appointment_date, a.appointment_date))
 
   const badge = (status: string) => {
     const map: Record<string, { bg: string; color: string }> = {
@@ -53,9 +67,10 @@ export default function AppointmentsPage() {
             <label style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>Notes</label>
             <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 10px', fontSize: 12, outline: 'none', resize: 'none' }} />
           </div>
+          {error && <p style={{ fontSize: 11, color: '#991b1b', background: '#fee2e2', borderRadius: 8, padding: '7px 10px', marginTop: 10 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button onClick={save} style={{ background: '#111', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Save</button>
-            <button onClick={() => setShowForm(false)} style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setShowForm(false); setError('') }} style={{ background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}
