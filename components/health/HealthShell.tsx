@@ -1,6 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import PendingReview from './PendingReview'
+import type { IngestResponse, PendingRecord } from '@/lib/health/types'
 
 const TABS = [
   { label: 'Home', icon: '🏠', href: '/dashboard/health/home' },
@@ -12,17 +14,101 @@ const TABS = [
   { label: 'Pill Tracker', icon: '✅', href: '/dashboard/health/pill-tracker' },
 ]
 
+interface Msg { role: 'ai' | 'user'; text: string }
 interface Props { children: React.ReactNode }
 
 export default function HealthShell({ children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [messages, setMessages] = useState([
-    { role: 'ai', text: "Good day. I'm JARVIS, your health assistant. Ask me about any of your records." }
+  const [messages, setMessages] = useState<Msg[]>([
+    { role: 'ai', text: "Good day. I'm JARVIS, your health assistant. Ask me anything, or drop in a document or screenshot and I'll file it." },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [pending, setPending] = useState<PendingRecord[]>([])
+  const [pendingDocId, setPendingDocId] = useState<string | null>(null)
+  // Bumping this remounts the tab subtree so its useEffect refetches.
+  const [dataVersion, setDataVersion] = useState(0)
+
+  const fileInput = useRef<HTMLInputElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
   const router = useRouter()
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+  }, [messages, uploading, pending.length])
+
+  const say = (text: string) => setMessages(m => [...m, { role: 'ai', text }])
+
+  const upload = useCallback(async (file: File) => {
+    if (uploading) return
+    setUploading(true)
+    setMessages(m => [...m, { role: 'user', text: `📎 ${file.name || 'screenshot'}` }])
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/health/ingest', { method: 'POST', body: fd })
+      const data = await res.json()
+
+      if (!res.ok) {
+        say(data.error || 'I could not read that file.')
+        return
+      }
+
+      const d = data as IngestResponse
+      const parts: string[] = []
+      if (d.applied.blood_results) parts.push(`${d.applied.blood_results} test result${d.applied.blood_results > 1 ? 's' : ''}`)
+      if (d.applied.medicines) parts.push(`${d.applied.medicines} medicine${d.applied.medicines > 1 ? 's' : ''}`)
+      if (d.applied.appointments) parts.push(`${d.applied.appointments} appointment${d.applied.appointments > 1 ? 's' : ''}`)
+
+      const lines = [d.summary || 'Filed the document.']
+      lines.push(parts.length ? `Added ${parts.join(', ')}.` : 'Nothing was added automatically.')
+      if (d.pending.length) lines.push(`${d.pending.length} item${d.pending.length > 1 ? 's need' : ' needs'} your check below.`)
+      if (d.errors.length) lines.push(`Problems: ${d.errors.join('; ')}`)
+      say(lines.join('\n'))
+
+      setPending(d.pending)
+      setPendingDocId(d.document?.id ?? null)
+      if (parts.length) setDataVersion(v => v + 1)
+    } catch (err) {
+      say(`Upload failed: ${String(err)}`)
+    } finally {
+      setUploading(false)
+    }
+  }, [uploading])
+
+  // Ctrl+V a screenshot anywhere on the health pages.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const file = Array.from(e.clipboardData?.items ?? [])
+        .find(i => i.kind === 'file')
+        ?.getAsFile()
+      if (file) {
+        e.preventDefault()
+        void upload(file)
+      }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [upload])
+
+  async function applyPending(chosen: PendingRecord[]) {
+    const res = await fetch('/api/health/ingest/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: chosen, document_id: pendingDocId }),
+    })
+    const data = await res.json()
+    if (!res.ok) return say(data.error || 'Could not save those records.')
+
+    const total = (data.applied?.blood_results ?? 0) + (data.applied?.medicines ?? 0) + (data.applied?.appointments ?? 0)
+    say(total ? `Saved ${total} record${total > 1 ? 's' : ''}.` : 'Nothing was saved.')
+    if (data.errors?.length) say(`Problems: ${data.errors.join('; ')}`)
+    setPending([])
+    if (total) setDataVersion(v => v + 1)
+  }
 
   async function send() {
     if (!input.trim() || loading) return
@@ -61,30 +147,46 @@ export default function HealthShell({ children }: Props) {
     }
   }
 
+  const width = !sidebarOpen ? 44 : pending.length ? 400 : 270
+
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* JARVIS sidebar */}
-      <div style={{
-        width: sidebarOpen ? 270 : 44,
-        background: '#111',
-        display: 'flex',
-        flexDirection: 'column',
-        flexShrink: 0,
-        transition: 'width .2s',
-        overflow: 'hidden',
-      }}>
+      <div
+        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => {
+          e.preventDefault()
+          setDragging(false)
+          const f = e.dataTransfer.files?.[0]
+          if (f) void upload(f)
+        }}
+        style={{
+          width,
+          background: '#111',
+          display: 'flex',
+          flexDirection: 'column',
+          flexShrink: 0,
+          transition: 'width .2s',
+          overflow: 'hidden',
+          outline: dragging ? '2px dashed #1d4ed8' : 'none',
+          outlineOffset: -4,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 12px', borderBottom: '1px solid #1f2937' }}>
           {sidebarOpen && <span style={{ color: '#fff', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>◉ &nbsp;JARVIS</span>}
           <button onClick={() => setSidebarOpen(o => !o)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 14 }}>
             {sidebarOpen ? '←' : '→'}
           </button>
         </div>
+
         {sidebarOpen && (
           <>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {messages.map((m, i) => (
                 <div key={i} style={{
                   fontSize: 11, lineHeight: 1.5, padding: '7px 9px', borderRadius: 10, maxWidth: '95%',
+                  whiteSpace: 'pre-wrap',
                   background: m.role === 'ai' ? '#1d4ed8' : '#1f2937',
                   color: m.role === 'ai' ? '#fff' : '#d1d5db',
                   alignSelf: m.role === 'ai' ? 'flex-start' : 'flex-end',
@@ -92,14 +194,47 @@ export default function HealthShell({ children }: Props) {
                   {m.text || (loading && m.role === 'ai' ? '…' : '')}
                 </div>
               ))}
+
+              {uploading && (
+                <div style={{ fontSize: 11, color: '#9ca3af', padding: '7px 9px' }}>Reading the document…</div>
+              )}
+
+              {pending.length > 0 && (
+                <PendingReview
+                  items={pending}
+                  onApply={applyPending}
+                  onDismiss={() => { setPending([]); say('Discarded the unconfirmed items.') }}
+                />
+              )}
             </div>
-            <div style={{ padding: 8, borderTop: '1px solid #1f2937' }}>
+
+            {dragging && (
+              <div style={{ fontSize: 10, color: '#93c5fd', textAlign: 'center', padding: '0 10px 6px' }}>Drop to file it</div>
+            )}
+
+            <div style={{ padding: 8, borderTop: '1px solid #1f2937', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                onClick={() => fileInput.current?.click()}
+                title="Attach a PDF or image"
+                style={{ background: '#1f2937', border: 'none', borderRadius: 8, color: '#9ca3af', cursor: 'pointer', fontSize: 13, padding: '6px 9px', flexShrink: 0 }}
+              >📎</button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) void upload(f)
+                  e.target.value = ''
+                }}
+                style={{ display: 'none' }}
+              />
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && send()}
-                placeholder="Ask about your health…"
-                style={{ width: '100%', background: '#1f2937', border: 'none', borderRadius: 8, padding: '7px 10px', color: '#fff', fontSize: 11, outline: 'none' }}
+                placeholder="Ask, or paste a screenshot…"
+                style={{ flex: 1, minWidth: 0, background: '#1f2937', border: 'none', borderRadius: 8, padding: '7px 10px', color: '#fff', fontSize: 11, outline: 'none' }}
               />
             </div>
           </>
@@ -108,11 +243,9 @@ export default function HealthShell({ children }: Props) {
 
       {/* Main area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        {/* Top bar */}
         <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 20px', display: 'flex', alignItems: 'center', height: 50, flexShrink: 0 }}>
           <span style={{ fontSize: 14, fontWeight: 700 }}>Health Records</span>
         </div>
-        {/* Tab nav */}
         <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 20px', display: 'flex', flexShrink: 0 }}>
           {TABS.map(tab => {
             const active = pathname.startsWith(tab.href)
@@ -129,8 +262,8 @@ export default function HealthShell({ children }: Props) {
             )
           })}
         </div>
-        {/* Page content */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* key remounts the page so it refetches after an ingest */}
+        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }}>
           {children}
         </div>
       </div>
