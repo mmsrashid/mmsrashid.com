@@ -19,7 +19,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const all = await listMessages(50)
+    const all = await listMessages('INBOX', 50)
     const health = all.filter(isHealthRelated)
     return NextResponse.json(health)
   } catch (err) {
