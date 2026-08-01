@@ -125,19 +125,29 @@ export async function POST(req: Request) {
       continue
     }
 
-    const { error } = await supabase.from('health_blood_results').insert({
+    // One reading per marker per date, so re-uploading a panel updates rather
+    // than duplicating.
+    const { error } = await supabase.from('health_blood_results').upsert({
       user_id: user.id,
       marker_id: marker.id,
       value: r.value,
       test_date,
       lab_name: r.lab_name || null,
       document_id: doc.id,
-    })
+    }, { onConflict: 'user_id,marker_id,test_date' })
     if (error) errors.push(`${marker.name}: ${error.message}`)
     else applied.blood_results++
   }
 
   /* ---- Medicines ---- */
+  // Fetch once so repeated names within a document collapse too.
+  const { data: existingMeds } = await supabase
+    .from('health_medicines')
+    .select('id, name, dose, dose_unit, frequency, route, start_date, prescribing_doctor')
+    .eq('status', 'active')
+  const medIndex = new Map<string, NonNullable<typeof existingMeds>[number]>()
+  for (const m of existingMeds ?? []) medIndex.set(m.name.trim().toLowerCase(), m)
+
   for (const m of extraction.medicines) {
     const rec: ExtractedMedicine = m
     if (!m.name?.trim()) {
@@ -148,18 +158,38 @@ export async function POST(req: Request) {
       pending.push({ kind: 'medicine', reason: 'Details were unclear in the source', record: rec })
       continue
     }
-    const { error } = await supabase.from('health_medicines').insert({
-      user_id: user.id,
-      name: m.name.trim(),
+
+    const name = m.name.trim()
+    const incoming = {
       dose: typeof m.dose === 'number' ? m.dose : null,
       dose_unit: m.dose_unit || null,
       frequency: m.frequency || null,
       route: m.route || null,
       start_date: toDateOnly(m.start_date),
       prescribing_doctor: m.prescribing_doctor || null,
-    })
-    if (error) errors.push(`${m.name}: ${error.message}`)
-    else applied.medicines++
+    }
+    const existing = medIndex.get(name.toLowerCase())
+
+    if (existing) {
+      // Only fill gaps — never overwrite a value already on record with null.
+      const patch: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(incoming)) {
+        if (v !== null && existing[k as keyof typeof existing] == null) patch[k] = v
+      }
+      if (Object.keys(patch).length === 0) continue
+      const { error } = await supabase.from('health_medicines').update(patch).eq('id', existing.id)
+      if (error) errors.push(`${name}: ${error.message}`)
+      continue
+    }
+
+    const { data: inserted, error } = await supabase
+      .from('health_medicines')
+      .insert({ user_id: user.id, name, ...incoming })
+      .select('id, name, dose, dose_unit, frequency, route, start_date, prescribing_doctor')
+      .single()
+    if (error) { errors.push(`${name}: ${error.message}`); continue }
+    medIndex.set(name.toLowerCase(), inserted)
+    applied.medicines++
   }
 
   /* ---- Appointments ---- */
