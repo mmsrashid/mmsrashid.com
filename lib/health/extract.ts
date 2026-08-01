@@ -131,6 +131,10 @@ export async function extractHealthRecords(
   base64: string,
   mime: SupportedMime,
 ): Promise<ExtractionResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is not configured on the server.')
+  }
+
   const source =
     mime === 'application/pdf'
       ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64 } }

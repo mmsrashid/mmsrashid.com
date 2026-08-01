@@ -21,14 +21,25 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Unauthorized', { status: 401 })
 
-  const { messages } = await req.json() as { messages: Anthropic.MessageParam[] }
+  const { messages, context } = await req.json() as {
+    messages: Anthropic.MessageParam[]
+    context?: string
+  }
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return new Response('messages must be a non-empty array', { status: 400 })
+  }
 
   const memories = await readMemories(user.id)
   const memorySummary = memories.length > 0
     ? memories.map(m => `- [${m.type}] ${m.content}`).join('\n')
     : '(none yet)'
 
-  const systemPrompt = `${SYSTEM_PROMPT}\n${memorySummary}`
+  const healthNote = context === 'health'
+    ? `\n\nThe user is viewing their Health Records. Questions are most likely about appointments, medicines, blood test results, documents or pill adherence. They can also upload a lab report or a screenshot of one and you will file it automatically.`
+    : ''
+
+  const systemPrompt = `${SYSTEM_PROMPT}\n${memorySummary}${healthNote}`
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({

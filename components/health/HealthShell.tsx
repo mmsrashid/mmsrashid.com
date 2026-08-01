@@ -114,13 +114,21 @@ export default function HealthShell({ children }: Props) {
     if (!input.trim() || loading) return
     const userMsg = input.trim()
     setInput('')
-    setMessages(m => [...m, { role: 'user', text: userMsg }])
+    const history = [...messages, { role: 'user' as const, text: userMsg }]
+    setMessages(history)
     setLoading(true)
     try {
+      // The API takes an Anthropic-shaped messages array. Drop the opening
+      // greeting, since a conversation cannot start with an assistant turn.
+      const wire = history
+        .filter((m, i) => !(i === 0 && m.role === 'ai'))
+        .filter(m => m.text.trim() && !m.text.startsWith('📎 '))
+        .map(m => ({ role: m.role === 'ai' ? 'assistant' as const : 'user' as const, content: m.text }))
+
       const res = await fetch('/api/jarvis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg, context: 'health' }),
+        body: JSON.stringify({ messages: wire, context: 'health' }),
       })
       const reader = res.body!.getReader()
       const dec = new TextDecoder()
