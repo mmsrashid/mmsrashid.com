@@ -1,9 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import type {
+  AppliedCounts,
   ExtractedAppointment,
   ExtractedBloodResult,
+  ExtractedExercise,
   ExtractedMedicine,
+  ExtractedNutrition,
+  ExtractedSleep,
   PendingRecord,
 } from '@/lib/health/types'
 
@@ -24,7 +28,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'records must be an array.' }, { status: 400 })
   }
 
-  const applied = { blood_results: 0, medicines: 0, appointments: 0 }
+  const applied: AppliedCounts = {
+    blood_results: 0, medicines: 0, appointments: 0,
+    sleep: 0, nutrition: 0, exercise: 0,
+  }
   const errors: string[] = []
 
   for (const item of records) {
@@ -91,6 +98,63 @@ export async function POST(req: Request) {
         status: new Date(a.appointment_date) > new Date() ? 'upcoming' : 'completed',
       })
       error ? errors.push(`${a.appointment_type}: ${error.message}`) : applied.appointments++
+    }
+
+    if (item.kind === 'sleep') {
+      const s = item.record as ExtractedSleep
+      if (!s.sleep_date) {
+        errors.push('Sleep: a date is required')
+        continue
+      }
+      const { error } = await supabase.from('health_sleep_logs').upsert({
+        user_id: user.id,
+        sleep_date: s.sleep_date,
+        total_hours: s.total_hours,
+        quality_score: s.quality_score == null ? null : Math.round(s.quality_score),
+        bedtime: s.bedtime || null,
+        wake_time: s.wake_time || null,
+      }, { onConflict: 'user_id,sleep_date' })
+      error ? errors.push(`Sleep ${s.sleep_date}: ${error.message}`) : applied.sleep++
+    }
+
+    if (item.kind === 'nutrition') {
+      const n = item.record as ExtractedNutrition
+      if (!n.log_date) {
+        errors.push('Nutrition: a date is required')
+        continue
+      }
+      const { error } = await supabase.from('health_nutrition_logs').upsert({
+        user_id: user.id,
+        log_date: n.log_date,
+        calories: n.calories == null ? null : Math.round(n.calories),
+        protein_g: n.protein_g,
+        carbs_g: n.carbs_g,
+        fat_g: n.fat_g,
+        water_ml: n.water_ml == null ? null : Math.round(n.water_ml),
+      }, { onConflict: 'user_id,log_date' })
+      error ? errors.push(`Nutrition ${n.log_date}: ${error.message}`) : applied.nutrition++
+    }
+
+    if (item.kind === 'exercise') {
+      const e = item.record as ExtractedExercise
+      if (!e.activity_type?.trim()) {
+        errors.push('Exercise: an activity type is required')
+        continue
+      }
+      if (!e.exercise_date) {
+        errors.push(`${e.activity_type}: a date is required`)
+        continue
+      }
+      const { error } = await supabase.from('health_exercise_logs').insert({
+        user_id: user.id,
+        exercise_date: e.exercise_date,
+        activity_type: e.activity_type.trim(),
+        duration_min: e.duration_min == null ? null : Math.round(e.duration_min),
+        intensity: e.intensity ?? null,
+        distance_km: e.distance_km,
+        avg_heart_rate: e.avg_heart_rate == null ? null : Math.round(e.avg_heart_rate),
+      })
+      error ? errors.push(`${e.activity_type}: ${error.message}`) : applied.exercise++
     }
   }
 

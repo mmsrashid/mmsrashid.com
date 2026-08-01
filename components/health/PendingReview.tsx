@@ -3,7 +3,10 @@ import { useState } from 'react'
 import type {
   ExtractedAppointment,
   ExtractedBloodResult,
+  ExtractedExercise,
   ExtractedMedicine,
+  ExtractedNutrition,
+  ExtractedSleep,
   PendingRecord,
 } from '@/lib/health/types'
 
@@ -17,6 +20,9 @@ const KIND_LABEL: Record<PendingRecord['kind'], string> = {
   blood_result: '🩸 Test result',
   medicine: '💊 Medicine',
   appointment: '📅 Appointment',
+  sleep: '😴 Sleep',
+  nutrition: '🥗 Nutrition',
+  exercise: '🏃 Exercise',
 }
 
 const input: React.CSSProperties = {
@@ -116,6 +122,70 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
                 <div style={{ gridColumn: '1 / -1' }}>
                   <span style={label}>frequency</span>
                   <input style={input} value={m.frequency ?? ''} onChange={e => patch(i, { frequency: e.target.value })} />
+                </div>
+              </div>
+            )
+          })()}
+
+          {row.kind === 'sleep' && (() => {
+            const s = row.record as ExtractedSleep
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                <div>
+                  <span style={label}>date</span>
+                  <input style={input} type="date" value={s.sleep_date ?? ''} onChange={e => patch(i, { sleep_date: e.target.value || null })} />
+                </div>
+                <div>
+                  <span style={label}>hours</span>
+                  <input style={input} type="number" step="0.1" value={s.total_hours ?? ''} onChange={e => patch(i, { total_hours: e.target.value === '' ? null : parseFloat(e.target.value) })} />
+                </div>
+                <div>
+                  <span style={label}>quality (0–100)</span>
+                  <input style={input} type="number" value={s.quality_score ?? ''} onChange={e => patch(i, { quality_score: e.target.value === '' ? null : parseInt(e.target.value, 10) })} />
+                </div>
+              </div>
+            )
+          })()}
+
+          {row.kind === 'nutrition' && (() => {
+            const n = row.record as ExtractedNutrition
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                <div>
+                  <span style={label}>date</span>
+                  <input style={input} type="date" value={n.log_date ?? ''} onChange={e => patch(i, { log_date: e.target.value || null })} />
+                </div>
+                <div>
+                  <span style={label}>calories</span>
+                  <input style={input} type="number" value={n.calories ?? ''} onChange={e => patch(i, { calories: e.target.value === '' ? null : parseInt(e.target.value, 10) })} />
+                </div>
+                <div>
+                  <span style={label}>protein (g)</span>
+                  <input style={input} type="number" step="0.1" value={n.protein_g ?? ''} onChange={e => patch(i, { protein_g: e.target.value === '' ? null : parseFloat(e.target.value) })} />
+                </div>
+                <div>
+                  <span style={label}>water (ml)</span>
+                  <input style={input} type="number" value={n.water_ml ?? ''} onChange={e => patch(i, { water_ml: e.target.value === '' ? null : parseInt(e.target.value, 10) })} />
+                </div>
+              </div>
+            )
+          })()}
+
+          {row.kind === 'exercise' && (() => {
+            const x = row.record as ExtractedExercise
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={label}>activity</span>
+                  <input style={input} value={x.activity_type ?? ''} onChange={e => patch(i, { activity_type: e.target.value })} />
+                </div>
+                <div>
+                  <span style={label}>date</span>
+                  <input style={input} type="date" value={x.exercise_date ?? ''} onChange={e => patch(i, { exercise_date: e.target.value || null })} />
+                </div>
+                <div>
+                  <span style={label}>duration (min)</span>
+                  <input style={input} type="number" value={x.duration_min ?? ''} onChange={e => patch(i, { duration_min: e.target.value === '' ? null : parseInt(e.target.value, 10) })} />
                 </div>
               </div>
             )

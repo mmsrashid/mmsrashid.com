@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { extractHealthRecords, isSupportedMime } from '@/lib/health/extract'
 import { buildMarkerResolver } from '@/lib/health/match-marker'
 import type {
+  AppliedCounts,
   BloodMarker,
   ExtractedAppointment,
   ExtractedBloodResult,
@@ -70,7 +71,10 @@ export async function POST(req: Request) {
 
   const errors: string[] = []
   const pending: PendingRecord[] = []
-  const applied = { blood_results: 0, medicines: 0, appointments: 0 }
+  const applied: AppliedCounts = {
+    blood_results: 0, medicines: 0, appointments: 0,
+    sleep: 0, nutrition: 0, exercise: 0,
+  }
 
   const { data: markerRows } = await supabase
     .from('health_blood_markers')
@@ -184,6 +188,81 @@ export async function POST(req: Request) {
     })
     if (error) errors.push(`${a.appointment_type}: ${error.message}`)
     else applied.appointments++
+  }
+
+  /* ---- Sleep ---- */
+  for (const s of extraction.sleep) {
+    const date = toDateOnly(s.sleep_date)
+    if (!date) {
+      pending.push({ kind: 'sleep', reason: 'No date on the record', record: s })
+      continue
+    }
+    if (s.confidence !== 'high') {
+      pending.push({ kind: 'sleep', reason: 'Figures were unclear in the source', record: s })
+      continue
+    }
+    const { error } = await supabase.from('health_sleep_logs').upsert({
+      user_id: user.id,
+      sleep_date: date,
+      total_hours: s.total_hours,
+      quality_score: s.quality_score == null ? null : Math.round(s.quality_score),
+      bedtime: s.bedtime || null,
+      wake_time: s.wake_time || null,
+    }, { onConflict: 'user_id,sleep_date' })
+    if (error) errors.push(`Sleep ${date}: ${error.message}`)
+    else applied.sleep++
+  }
+
+  /* ---- Nutrition ---- */
+  for (const n of extraction.nutrition) {
+    const date = toDateOnly(n.log_date)
+    if (!date) {
+      pending.push({ kind: 'nutrition', reason: 'No date on the record', record: n })
+      continue
+    }
+    if (n.confidence !== 'high') {
+      pending.push({ kind: 'nutrition', reason: 'Figures were unclear in the source', record: n })
+      continue
+    }
+    const { error } = await supabase.from('health_nutrition_logs').upsert({
+      user_id: user.id,
+      log_date: date,
+      calories: n.calories == null ? null : Math.round(n.calories),
+      protein_g: n.protein_g,
+      carbs_g: n.carbs_g,
+      fat_g: n.fat_g,
+      water_ml: n.water_ml == null ? null : Math.round(n.water_ml),
+    }, { onConflict: 'user_id,log_date' })
+    if (error) errors.push(`Nutrition ${date}: ${error.message}`)
+    else applied.nutrition++
+  }
+
+  /* ---- Exercise ---- */
+  for (const e of extraction.exercise) {
+    const date = toDateOnly(e.exercise_date)
+    if (!e.activity_type?.trim()) {
+      pending.push({ kind: 'exercise', reason: 'No activity type', record: e })
+      continue
+    }
+    if (!date) {
+      pending.push({ kind: 'exercise', reason: 'No date on the record', record: e })
+      continue
+    }
+    if (e.confidence !== 'high') {
+      pending.push({ kind: 'exercise', reason: 'Figures were unclear in the source', record: e })
+      continue
+    }
+    const { error } = await supabase.from('health_exercise_logs').insert({
+      user_id: user.id,
+      exercise_date: date,
+      activity_type: e.activity_type.trim(),
+      duration_min: e.duration_min == null ? null : Math.round(e.duration_min),
+      intensity: e.intensity ?? null,
+      distance_km: e.distance_km,
+      avg_heart_rate: e.avg_heart_rate == null ? null : Math.round(e.avg_heart_rate),
+    })
+    if (error) errors.push(`${e.activity_type}: ${error.message}`)
+    else applied.exercise++
   }
 
   const body: IngestResponse = {

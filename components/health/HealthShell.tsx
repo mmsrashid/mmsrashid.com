@@ -10,6 +10,9 @@ const TABS = [
   { label: 'Messages', icon: '💬', href: '/dashboard/health/messages' },
   { label: 'Medicines', icon: '💊', href: '/dashboard/health/medicines' },
   { label: 'Test Results', icon: '🩸', href: '/dashboard/health/blood' },
+  { label: 'Sleep', icon: '😴', href: '/dashboard/health/sleep' },
+  { label: 'Nutrition', icon: '🥗', href: '/dashboard/health/nutrition' },
+  { label: 'Exercise', icon: '🏃', href: '/dashboard/health/exercise' },
   { label: 'Documents', icon: '📄', href: '/dashboard/health/documents' },
   { label: 'Pill Tracker', icon: '✅', href: '/dashboard/health/pill-tracker' },
 ]
@@ -58,10 +61,16 @@ export default function HealthShell({ children }: Props) {
       }
 
       const d = data as IngestResponse
-      const parts: string[] = []
-      if (d.applied.blood_results) parts.push(`${d.applied.blood_results} test result${d.applied.blood_results > 1 ? 's' : ''}`)
-      if (d.applied.medicines) parts.push(`${d.applied.medicines} medicine${d.applied.medicines > 1 ? 's' : ''}`)
-      if (d.applied.appointments) parts.push(`${d.applied.appointments} appointment${d.applied.appointments > 1 ? 's' : ''}`)
+      const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+      const a = d.applied
+      const parts = [
+        a.blood_results && plural(a.blood_results, 'test result'),
+        a.medicines && plural(a.medicines, 'medicine'),
+        a.appointments && plural(a.appointments, 'appointment'),
+        a.sleep && plural(a.sleep, 'sleep night', 'sleep nights'),
+        a.nutrition && plural(a.nutrition, 'nutrition day', 'nutrition days'),
+        a.exercise && plural(a.exercise, 'workout'),
+      ].filter(Boolean) as string[]
 
       const lines = [d.summary || 'Filed the document.']
       lines.push(parts.length ? `Added ${parts.join(', ')}.` : 'Nothing was added automatically.')
@@ -103,7 +112,7 @@ export default function HealthShell({ children }: Props) {
     const data = await res.json()
     if (!res.ok) return say(data.error || 'Could not save those records.')
 
-    const total = (data.applied?.blood_results ?? 0) + (data.applied?.medicines ?? 0) + (data.applied?.appointments ?? 0)
+    const total = Object.values<number>(data.applied ?? {}).reduce((s, n) => s + (n || 0), 0)
     say(total ? `Saved ${total} record${total > 1 ? 's' : ''}.` : 'Nothing was saved.')
     if (data.errors?.length) say(`Problems: ${data.errors.join('; ')}`)
     setPending([])

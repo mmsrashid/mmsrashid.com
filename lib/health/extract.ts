@@ -98,12 +98,67 @@ const RECORD_TOOL = {
           required: ['appointment_date', 'appointment_type', 'doctor_name', 'clinic_name', 'confidence'],
         },
       },
+      sleep: {
+        type: 'array',
+        description:
+          'Nightly sleep records, e.g. from a Whoop, Oura, Fitbit or Apple Health screenshot. One entry per night.',
+        items: {
+          type: 'object',
+          properties: {
+            sleep_date: { type: ['string', 'null'], description: 'YYYY-MM-DD for the night. Null if absent.' },
+            total_hours: { type: ['number', 'null'], description: 'Total sleep in hours, e.g. 7.5 for 7h 30m.' },
+            quality_score: { type: ['number', 'null'], description: 'Sleep score normalised to 0-100 if one is shown.' },
+            bedtime: { type: ['string', 'null'], description: '24-hour HH:MM.' },
+            wake_time: { type: ['string', 'null'], description: '24-hour HH:MM.' },
+            confidence: CONFIDENCE,
+          },
+          required: ['sleep_date', 'total_hours', 'quality_score', 'bedtime', 'wake_time', 'confidence'],
+        },
+      },
+      nutrition: {
+        type: 'array',
+        description: 'Daily nutrition totals, e.g. from MyFitnessPal or a food diary. One entry per day.',
+        items: {
+          type: 'object',
+          properties: {
+            log_date: { type: ['string', 'null'], description: 'YYYY-MM-DD. Null if absent.' },
+            calories: { type: ['number', 'null'], description: 'Total kcal for the day.' },
+            protein_g: { type: ['number', 'null'] },
+            carbs_g: { type: ['number', 'null'] },
+            fat_g: { type: ['number', 'null'] },
+            water_ml: { type: ['number', 'null'], description: 'Convert litres to millilitres.' },
+            confidence: CONFIDENCE,
+          },
+          required: ['log_date', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'water_ml', 'confidence'],
+        },
+      },
+      exercise: {
+        type: 'array',
+        description: 'Workout sessions, e.g. from Strava or a watch. One entry per session.',
+        items: {
+          type: 'object',
+          properties: {
+            exercise_date: { type: ['string', 'null'], description: 'YYYY-MM-DD. Null if absent.' },
+            activity_type: { type: 'string', description: 'e.g. Running, Cycling, Strength.' },
+            duration_min: { type: ['number', 'null'], description: 'Whole minutes.' },
+            intensity: { type: ['string', 'null'], enum: ['low', 'moderate', 'high', null] },
+            distance_km: { type: ['number', 'null'], description: 'Convert miles to kilometres.' },
+            avg_heart_rate: { type: ['number', 'null'], description: 'Average bpm.' },
+            confidence: CONFIDENCE,
+          },
+          required: ['exercise_date', 'activity_type', 'duration_min', 'intensity', 'distance_km', 'avg_heart_rate', 'confidence'],
+        },
+      },
     },
-    required: ['document_type', 'tags', 'summary', 'blood_results', 'medicines', 'appointments'],
+    required: [
+      'document_type', 'tags', 'summary',
+      'blood_results', 'medicines', 'appointments',
+      'sleep', 'nutrition', 'exercise',
+    ],
   },
 }
 
-const PROMPT = `You are reading a personal health document — it may be a lab report, a letter from a clinician, a prescription, or a phone screenshot of any of those.
+const PROMPT = `You are reading a personal health document — it may be a lab report, a letter from a clinician, a prescription, or a phone screenshot of any of those, including a wearable or fitness app (Whoop, Oura, Fitbit, Apple Health, Strava, MyFitnessPal).
 
 Extract every health record you can find and report it with the record_health_data tool.
 
@@ -121,6 +176,9 @@ const EMPTY: ExtractionResult = {
   blood_results: [],
   medicines: [],
   appointments: [],
+  sleep: [],
+  nutrition: [],
+  exercise: [],
 }
 
 /**
@@ -159,5 +217,8 @@ export async function extractHealthRecords(
     blood_results: Array.isArray(raw.blood_results) ? raw.blood_results : [],
     medicines: Array.isArray(raw.medicines) ? raw.medicines : [],
     appointments: Array.isArray(raw.appointments) ? raw.appointments : [],
+    sleep: Array.isArray(raw.sleep) ? raw.sleep : [],
+    nutrition: Array.isArray(raw.nutrition) ? raw.nutrition : [],
+    exercise: Array.isArray(raw.exercise) ? raw.exercise : [],
   }
 }
