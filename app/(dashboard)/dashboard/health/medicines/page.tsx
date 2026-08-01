@@ -2,6 +2,11 @@
 import { useEffect, useState } from 'react'
 import type { HealthMedicine } from '@/lib/health/types'
 
+/** Extracted names often already carry the title, so don't double it up. */
+function withTitle(name: string) {
+  return /^(dr|prof|mr|mrs|ms|miss)\b\.?/i.test(name.trim()) ? name.trim() : `Dr ${name.trim()}`
+}
+
 export default function MedicinesPage() {
   const [medicines, setMedicines] = useState<HealthMedicine[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -72,7 +77,7 @@ export default function MedicinesPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 700 }}>{m.name}</div>
                 <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{m.dose}{m.dose_unit} · {m.frequency} · {m.route}</div>
-                {m.prescribing_doctor && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>Dr {m.prescribing_doctor}</div>}
+                {m.prescribing_doctor && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{withTitle(m.prescribing_doctor)}</div>}
               </div>
               <span style={{ fontSize: 9, fontWeight: 600, padding: '3px 9px', borderRadius: 10, background: m.status === 'active' ? '#d1fae5' : '#f3f4f6', color: m.status === 'active' ? '#065f46' : '#6b7280' }}>{m.status === 'active' ? 'Active' : 'Stopped'}</span>
             </div>
