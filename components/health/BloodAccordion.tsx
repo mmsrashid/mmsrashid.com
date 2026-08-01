@@ -46,10 +46,14 @@ export default function BloodAccordion({ markers, search }: { markers: BloodMark
     }, {})
   }, [filtered])
 
+  // Expand any group that has data, not just flagged ones — otherwise a
+  // category whose results are all normal looks identical to an empty one.
   const autoOpen = useMemo(() => {
     const s = new Set<string>()
     if (search) Object.keys(groups).forEach(g => s.add(g))
-    Object.entries(groups).forEach(([g, ms]) => { if (ms.some(m => m.status === 'high' || m.status === 'low')) s.add(g) })
+    Object.entries(groups).forEach(([g, ms]) => {
+      if (ms.some(m => m.latest_value != null)) s.add(g)
+    })
     return s
   }, [groups, search])
 
@@ -60,16 +64,23 @@ export default function BloodAccordion({ markers, search }: { markers: BloodMark
     <div>
       {Object.entries(groups).map(([cat, ms]) => {
         const flagCount = ms.filter(m => m.status === 'high' || m.status === 'low').length
+        const trackedCount = ms.filter(m => m.latest_value != null).length
         const expanded = isOpen(cat)
+        // Markers with readings first, so data is never buried below empties.
+        const ordered = [...ms].sort((a, b) => {
+          const d = Number(b.latest_value != null) - Number(a.latest_value != null)
+          return d !== 0 ? d : a.name.localeCompare(b.name)
+        })
         return (
           <div key={cat} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 8, overflow: 'hidden' }}>
             <div onClick={() => toggle(cat)} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}>
               <span style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{cat}</span>
-              {flagCount > 0 && <span style={{ fontSize: 10, fontWeight: 600, background: '#fee2e2', color: '#991b1b', padding: '2px 8px', borderRadius: 10, marginRight: 10 }}>{flagCount} flagged</span>}
+              {flagCount > 0 && <span style={{ fontSize: 10, fontWeight: 600, background: '#fee2e2', color: '#991b1b', padding: '2px 8px', borderRadius: 10, marginRight: 8 }}>{flagCount} flagged</span>}
+              {trackedCount > 0 && flagCount === 0 && <span style={{ fontSize: 10, fontWeight: 600, background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: 10, marginRight: 8 }}>{trackedCount} tracked</span>}
               <span style={{ fontSize: 11, color: '#9ca3af', marginRight: 10 }}>{ms.length} markers</span>
               <span style={{ fontSize: 12, color: '#6b7280' }}>{expanded ? '▲' : '▼'}</span>
             </div>
-            {expanded && ms.map(m => {
+            {expanded && ordered.map(m => {
               const ss = STATUS_STYLE[m.status] ?? STATUS_STYLE.unknown!
               const vals = m.results.map(r => r.value).reverse()
               return (
