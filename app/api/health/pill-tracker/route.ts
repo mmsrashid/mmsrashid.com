@@ -7,7 +7,10 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const url = new URL(req.url)
-  const days = parseInt(url.searchParams.get('days') ?? '30')
+  const daysParam = url.searchParams.get('days') ?? '30'
+  // days=all returns the full history, needed for the adherence trend.
+  const allTime = daysParam === 'all'
+  const days = allTime ? 0 : parseInt(daysParam)
 
   const { data: medicines, error: mErr } = await supabase
     .from('health_medicines')
@@ -17,16 +20,19 @@ export async function GET(req: Request) {
 
   if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 })
 
-  const since = new Date()
-  since.setDate(since.getDate() - days)
-  const sinceStr = since.toISOString().slice(0, 10)
-
-  const { data: logs, error: lErr } = await supabase
+  let query = supabase
     .from('health_pill_logs')
     .select('*')
     .eq('user_id', user.id)
-    .gte('log_date', sinceStr)
+    .order('log_date', { ascending: true })
 
+  if (!allTime) {
+    const since = new Date()
+    since.setDate(since.getDate() - days)
+    query = query.gte('log_date', since.toISOString().slice(0, 10))
+  }
+
+  const { data: logs, error: lErr } = await query
   if (lErr) return NextResponse.json({ error: lErr.message }, { status: 500 })
 
   return NextResponse.json({ medicines: medicines ?? [], logs: logs ?? [] })

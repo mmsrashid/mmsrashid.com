@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import AdherenceTrend from '@/components/health/AdherenceTrend'
 
 interface Medicine { id: string; name: string; dose: number | null; dose_unit: string | null; frequency: string | null }
 interface PillLog { id: string; medicine_id: string; log_date: string; taken: boolean; taken_at: string | null }
@@ -20,16 +21,48 @@ export default function PillTrackerPage() {
   const [days] = useState(30)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState<string[]>([])
+  const csvInput = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    fetch(`/api/health/pill-tracker?days=${days}`)
+  // days=all so the adherence trend covers the whole history, including imports.
+  const load = useCallback(() =>
+    fetch('/api/health/pill-tracker?days=all')
       .then(r => r.json())
       .then(d => {
         setMedicines(Array.isArray(d.medicines) ? d.medicines : [])
         setLogs(Array.isArray(d.logs) ? d.logs : [])
         setLoading(false)
-      })
-  }, [days])
+      }), [])
+
+  useEffect(() => { load() }, [load])
+
+  async function importCsv(file: File) {
+    setImporting(true)
+    setImportMsg([])
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/health/pill-tracker/import', { method: 'POST', body: fd })
+      const d = await res.json()
+      if (!res.ok) { setImportMsg([d.error || 'Import failed.']); return }
+
+      const lines: string[] = []
+      lines.push(`Imported ${d.imported} entries across ${d.daysCovered} days.`)
+      if (d.dateRange) lines.push(`${d.dateRange.from} → ${d.dateRange.to}`)
+      if (d.matchedMedicines?.length) lines.push(`Matched: ${d.matchedMedicines.join(', ')}`)
+      if (d.unmatchedColumns?.length) lines.push(`No matching medicine for: ${d.unmatchedColumns.join(', ')} — add them in the Medicines tab, then re-import.`)
+      if (d.skippedRows) lines.push(`${d.skippedRows} row(s) skipped — unreadable date.`)
+      if (d.unrecognisedValues?.length) lines.push(`Ignored values: ${d.unrecognisedValues.join(', ')}`)
+      if (d.errors?.length) lines.push(`Errors: ${d.errors.join('; ')}`)
+      setImportMsg(lines)
+      await load()
+    } catch (err) {
+      setImportMsg([`Import failed: ${String(err)}`])
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const getLog = useCallback((medicineId: string, date: string) =>
     logs.find(l => l.medicine_id === medicineId && l.log_date === date),
@@ -79,6 +112,20 @@ export default function PillTrackerPage() {
   const todayTaken = medicines.filter(m => getLog(m.id, today)?.taken).length
   const pct = todayTotal > 0 ? Math.round((todayTaken / todayTotal) * 100) : 0
 
+  // Adherence per day across every date that has any log, so imported history counts.
+  const historyDays = (() => {
+    const byDate = new Map<string, { taken: number; total: number }>()
+    for (const l of logs) {
+      const e = byDate.get(l.log_date) ?? { taken: 0, total: 0 }
+      e.total++
+      if (l.taken) e.taken++
+      byDate.set(l.log_date, e)
+    }
+    return [...byDate.entries()]
+      .map(([date, v]) => ({ date, ...v }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  })()
+
   return (
     <div style={{ padding: '20px 22px' }}>
       {/* Today summary */}
@@ -91,6 +138,35 @@ export default function PillTrackerPage() {
           <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#10b981' : pct > 50 ? '#f59e0b' : '#ef4444', borderRadius: 4, transition: 'width .3s' }} />
         </div>
         <div style={{ fontSize: 18, fontWeight: 800, color: pct === 100 ? '#10b981' : pct > 50 ? '#f59e0b' : '#ef4444' }}>{pct}%</div>
+      </div>
+
+      {/* Adherence over time */}
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Adherence over time</h3>
+          <button
+            onClick={() => csvInput.current?.click()}
+            disabled={importing}
+            style={{ background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, padding: '5px 12px', fontSize: 10, fontWeight: 600, cursor: importing ? 'wait' : 'pointer' }}
+          >
+            {importing ? 'Importing…' : 'Import CSV'}
+          </button>
+          <input
+            ref={csvInput}
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) void importCsv(f); e.target.value = '' }}
+          />
+        </div>
+        <AdherenceTrend days={historyDays} />
+        {importMsg.length > 0 && (
+          <div style={{ marginTop: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}>
+            {importMsg.map((l, i) => (
+              <p key={i} style={{ fontSize: 10, color: '#374151', lineHeight: 1.6 }}>{l}</p>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Table */}
