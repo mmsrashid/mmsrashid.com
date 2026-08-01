@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Medicines', icon: '💊', href: '/dashboard/health/medicines' },
   { label: 'Test Results', icon: '🩸', href: '/dashboard/health/blood' },
   { label: 'Documents', icon: '📄', href: '/dashboard/health/documents' },
+  { label: 'Pill Tracker', icon: '✅', href: '/dashboard/health/pill-tracker' },
 ]
 
 interface Props { children: React.ReactNode }
