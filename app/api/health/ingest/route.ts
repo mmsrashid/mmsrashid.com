@@ -8,6 +8,7 @@ import type {
   ExtractedAppointment,
   ExtractedBloodResult,
   ExtractedMedicine,
+  ExtractedPillLog,
   IngestResponse,
   PendingRecord,
 } from '@/lib/health/types'
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
   const pending: PendingRecord[] = []
   const applied: AppliedCounts = {
     blood_results: 0, medicines: 0, appointments: 0,
-    sleep: 0, nutrition: 0, exercise: 0,
+    sleep: 0, nutrition: 0, exercise: 0, pill_logs: 0,
   }
 
   const { data: markerRows } = await supabase
@@ -293,6 +294,38 @@ export async function POST(req: Request) {
     })
     if (error) errors.push(`${e.activity_type}: ${error.message}`)
     else applied.exercise++
+  }
+
+  /* ---- Pill logs ---- */
+  // Never auto-applied. A misread grid puts a tick on the wrong day, and unlike
+  // a lab value there is no implausible number to give it away later, so every
+  // cell goes through confirmation.
+  for (const p of extraction.pill_logs) {
+    const date = toDateOnly(p.log_date)
+    const match = p.medicine_name ? medIndex.get(p.medicine_name.trim().toLowerCase()) : undefined
+    const enriched: ExtractedPillLog = {
+      ...p,
+      medicine_id: match?.id ?? null,
+      matched_name: match?.name ?? null,
+    }
+    if (!date) {
+      pending.push({ kind: 'pill_log', reason: 'No date for this cell', record: enriched })
+      continue
+    }
+    enriched.log_date = date
+    if (!match) {
+      pending.push({
+        kind: 'pill_log',
+        reason: `"${p.medicine_name}" is not an active medicine`,
+        record: enriched,
+      })
+      continue
+    }
+    pending.push({
+      kind: 'pill_log',
+      reason: 'Check the grid alignment before saving',
+      record: enriched,
+    })
   }
 
   const body: IngestResponse = {

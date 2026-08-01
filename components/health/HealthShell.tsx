@@ -70,6 +70,7 @@ export default function HealthShell({ children }: Props) {
         a.sleep && plural(a.sleep, 'sleep night', 'sleep nights'),
         a.nutrition && plural(a.nutrition, 'nutrition day', 'nutrition days'),
         a.exercise && plural(a.exercise, 'workout'),
+        a.pill_logs && plural(a.pill_logs, 'pill entry', 'pill entries'),
       ].filter(Boolean) as string[]
 
       const lines = [d.summary || 'Filed the document.']

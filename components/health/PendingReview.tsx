@@ -6,6 +6,7 @@ import type {
   ExtractedExercise,
   ExtractedMedicine,
   ExtractedNutrition,
+  ExtractedPillLog,
   ExtractedSleep,
   PendingRecord,
 } from '@/lib/health/types'
@@ -23,6 +24,7 @@ const KIND_LABEL: Record<PendingRecord['kind'], string> = {
   sleep: '😴 Sleep',
   nutrition: '🥗 Nutrition',
   exercise: '🏃 Exercise',
+  pill_log: '✅ Pill log',
 }
 
 const input: React.CSSProperties = {
@@ -51,9 +53,12 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
   const patch = (i: number, changes: Record<string, unknown>) =>
     setRows(rs => rs.map((r, j) => (j === i ? { ...r, record: { ...r.record, ...changes } } : r)))
 
-  /** A blood result with no catalogue match can never be inserted. */
-  const blocked = (row: PendingRecord) =>
-    row.kind === 'blood_result' && !(row.record as ExtractedBloodResult).marker_id
+  /** Rows the server is guaranteed to reject, so they can't be selected. */
+  const blocked = (row: PendingRecord) => {
+    if (row.kind === 'blood_result') return !(row.record as ExtractedBloodResult).marker_id
+    if (row.kind === 'pill_log') return !(row.record as ExtractedPillLog).medicine_id
+    return false
+  }
 
   const selectedCount = chosen.filter((c, i) => c && !blocked(rows[i]!)).length
   const blockedCount = rows.filter(blocked).length
@@ -75,9 +80,21 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
       </div>
       {blockedCount > 0 && (
         <div style={{ fontSize: 9, color: '#6b7280', lineHeight: 1.5 }}>
-          {blockedCount} {blockedCount === 1 ? 'row is' : 'rows are'} greyed out because the marker
-          isn&apos;t in the catalogue, so there&apos;s nowhere to file the value. Tell me the marker
-          name and I&apos;ll add it.
+          {`${blockedCount} ${blockedCount === 1 ? 'row is' : 'rows are'} greyed out — there's no matching entry to file them against. Tell me the name and I'll add it.`}
+        </div>
+      )}
+
+      {/* A pill grid can produce dozens of rows, so ticking each one isn't reasonable. */}
+      {rows.length > 3 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={() => setChosen(rows.map(r => !blocked(r)))}
+            style={{ fontSize: 9, background: '#fff', border: '1px solid #d1d5db', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+          >Select all {rows.length - blockedCount}</button>
+          <button
+            onClick={() => setChosen(rows.map(() => false))}
+            style={{ fontSize: 9, background: '#fff', border: '1px solid #d1d5db', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+          >Clear</button>
         </div>
       )}
 
@@ -136,6 +153,29 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
                 <div style={{ gridColumn: '1 / -1' }}>
                   <span style={label}>frequency</span>
                   <input style={input} value={m.frequency ?? ''} onChange={e => patch(i, { frequency: e.target.value })} />
+                </div>
+              </div>
+            )
+          })()}
+
+          {row.kind === 'pill_log' && (() => {
+            const p = row.record as ExtractedPillLog
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={label}>medicine {p.matched_name ? `→ ${p.matched_name}` : '(no active medicine — cannot save)'}</span>
+                  <input style={input} value={p.medicine_name ?? ''} onChange={e => patch(i, { medicine_name: e.target.value })} />
+                </div>
+                <div>
+                  <span style={label}>date</span>
+                  <input style={input} type="date" value={p.log_date ?? ''} onChange={e => patch(i, { log_date: e.target.value || null })} />
+                </div>
+                <div>
+                  <span style={label}>taken</span>
+                  <select style={input} value={p.taken ? 'yes' : 'no'} onChange={e => patch(i, { taken: e.target.value === 'yes' })}>
+                    <option value="yes">taken</option>
+                    <option value="no">not taken</option>
+                  </select>
                 </div>
               </div>
             )

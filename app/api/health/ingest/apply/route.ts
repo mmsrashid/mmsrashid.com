@@ -7,6 +7,7 @@ import type {
   ExtractedExercise,
   ExtractedMedicine,
   ExtractedNutrition,
+  ExtractedPillLog,
   ExtractedSleep,
   PendingRecord,
 } from '@/lib/health/types'
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
 
   const applied: AppliedCounts = {
     blood_results: 0, medicines: 0, appointments: 0,
-    sleep: 0, nutrition: 0, exercise: 0,
+    sleep: 0, nutrition: 0, exercise: 0, pill_logs: 0,
   }
   const errors: string[] = []
 
@@ -155,6 +156,25 @@ export async function POST(req: Request) {
         avg_heart_rate: e.avg_heart_rate == null ? null : Math.round(e.avg_heart_rate),
       })
       error ? errors.push(`${e.activity_type}: ${error.message}`) : applied.exercise++
+    }
+
+    if (item.kind === 'pill_log') {
+      const p = item.record as ExtractedPillLog
+      if (!p.medicine_id) {
+        errors.push(`${p.medicine_name}: no matching active medicine`)
+        continue
+      }
+      if (!p.log_date) {
+        errors.push(`${p.medicine_name}: a date is required`)
+        continue
+      }
+      const { error } = await supabase.from('health_pill_logs').upsert({
+        user_id: user.id,
+        medicine_id: p.medicine_id,
+        log_date: p.log_date,
+        taken: !!p.taken,
+      }, { onConflict: 'user_id,medicine_id,log_date' })
+      error ? errors.push(`${p.medicine_name} ${p.log_date}: ${error.message}`) : applied.pill_logs++
     }
   }
 

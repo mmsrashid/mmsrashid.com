@@ -149,11 +149,26 @@ const RECORD_TOOL = {
           required: ['exercise_date', 'activity_type', 'duration_min', 'intensity', 'distance_km', 'avg_heart_rate', 'confidence'],
         },
       },
+      pill_logs: {
+        type: 'array',
+        description:
+          'Medication adherence ticks from a pill tracker, typically a grid with dates down one axis and medicines across the other. Emit one entry per filled cell. Read the grid carefully: a tick on the wrong row or column records the wrong day, and unlike a lab value that error is invisible afterwards. If you cannot align rows and columns with certainty, mark the entries "low" rather than guessing.',
+        items: {
+          type: 'object',
+          properties: {
+            log_date: { type: ['string', 'null'], description: 'YYYY-MM-DD for the cell.' },
+            medicine_name: { type: 'string', description: 'Medicine column header, as printed.' },
+            taken: { type: 'boolean', description: 'True if ticked or marked taken, false if explicitly empty or crossed.' },
+            confidence: CONFIDENCE,
+          },
+          required: ['log_date', 'medicine_name', 'taken', 'confidence'],
+        },
+      },
     },
     required: [
       'document_type', 'tags', 'summary',
       'blood_results', 'medicines', 'appointments',
-      'sleep', 'nutrition', 'exercise',
+      'sleep', 'nutrition', 'exercise', 'pill_logs',
     ],
   },
 }
@@ -179,6 +194,7 @@ const EMPTY: ExtractionResult = {
   sleep: [],
   nutrition: [],
   exercise: [],
+  pill_logs: [],
 }
 
 /**
@@ -220,5 +236,6 @@ export async function extractHealthRecords(
     sleep: Array.isArray(raw.sleep) ? raw.sleep : [],
     nutrition: Array.isArray(raw.nutrition) ? raw.nutrition : [],
     exercise: Array.isArray(raw.exercise) ? raw.exercise : [],
+    pill_logs: Array.isArray(raw.pill_logs) ? raw.pill_logs : [],
   }
 }

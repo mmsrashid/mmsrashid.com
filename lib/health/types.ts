@@ -187,6 +187,16 @@ export interface ExtractedExercise {
   confidence: Confidence
 }
 
+export interface ExtractedPillLog {
+  log_date: string | null
+  medicine_name: string
+  taken: boolean
+  confidence: Confidence
+  /** Resolved server-side against the user's active medicines. */
+  medicine_id?: string | null
+  matched_name?: string | null
+}
+
 export interface ExtractionResult {
   document_type: DocumentType
   tags: string[]
@@ -197,15 +207,16 @@ export interface ExtractionResult {
   sleep: ExtractedSleep[]
   nutrition: ExtractedNutrition[]
   exercise: ExtractedExercise[]
+  pill_logs: ExtractedPillLog[]
 }
 
 export type PendingKind =
   | 'blood_result' | 'medicine' | 'appointment'
-  | 'sleep' | 'nutrition' | 'exercise'
+  | 'sleep' | 'nutrition' | 'exercise' | 'pill_log'
 
 export type PendingPayload =
   | ExtractedBloodResult | ExtractedMedicine | ExtractedAppointment
-  | ExtractedSleep | ExtractedNutrition | ExtractedExercise
+  | ExtractedSleep | ExtractedNutrition | ExtractedExercise | ExtractedPillLog
 
 /** A record that was not auto-applied, with the reason why. */
 export interface PendingRecord {
@@ -221,6 +232,7 @@ export interface AppliedCounts {
   sleep: number
   nutrition: number
   exercise: number
+  pill_logs: number
 }
 
 export interface IngestResponse {

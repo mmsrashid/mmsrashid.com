@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import DocumentViewer from '@/components/health/DocumentViewer'
 import type { HealthDocument } from '@/lib/health/types'
 
 const TYPE_STYLE: Record<string, { icon: string; bg: string; badge: string; badgeColor: string; label: string }> = {
@@ -17,6 +18,7 @@ export default function DocumentsPage() {
   const [docs, setDocs] = useState<HealthDocument[]>([])
   const [filter, setFilter] = useState('All')
   const [uploading, setUploading] = useState(false)
+  const [viewing, setViewing] = useState<HealthDocument | null>(null)
 
   useEffect(() => {
     fetch('/api/health/documents').then(r => r.json()).then(d => setDocs(Array.isArray(d) ? d : []))
@@ -68,7 +70,8 @@ export default function DocumentsPage() {
         {filtered.map(doc => {
           const ts = TYPE_STYLE[doc.type] ?? TYPE_STYLE.other!
           return (
-            <div key={doc.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 14, cursor: 'pointer' }}
+            <div key={doc.id} onClick={() => setViewing(doc)} title="Open document"
+              style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 14, cursor: 'pointer' }}
               onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,.08)')}
               onMouseLeave={e => (e.currentTarget.style.boxShadow = '')}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -86,6 +89,14 @@ export default function DocumentsPage() {
           )
         })}
       </div>
+
+      {viewing && (
+        <DocumentViewer
+          doc={viewing}
+          onClose={() => setViewing(null)}
+          onDeleted={id => setDocs(ds => ds.filter(d => d.id !== id))}
+        />
+      )}
     </div>
   )
 }
