@@ -51,12 +51,18 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
   const patch = (i: number, changes: Record<string, unknown>) =>
     setRows(rs => rs.map((r, j) => (j === i ? { ...r, record: { ...r.record, ...changes } } : r)))
 
-  const selectedCount = chosen.filter(Boolean).length
+  /** A blood result with no catalogue match can never be inserted. */
+  const blocked = (row: PendingRecord) =>
+    row.kind === 'blood_result' && !(row.record as ExtractedBloodResult).marker_id
+
+  const selectedCount = chosen.filter((c, i) => c && !blocked(rows[i]!)).length
+  const blockedCount = rows.filter(blocked).length
 
   async function apply() {
     setSaving(true)
     try {
-      await onApply(rows.filter((_, i) => chosen[i]))
+      // Never send rows the server is guaranteed to reject.
+      await onApply(rows.filter((row, i) => chosen[i] && !blocked(row)))
     } finally {
       setSaving(false)
     }
@@ -67,13 +73,21 @@ export default function PendingReview({ items, onApply, onDismiss }: Props) {
       <div style={{ fontSize: 10, color: '#92400e', fontWeight: 700 }}>
         Needs your check — I wasn&apos;t confident about these
       </div>
+      {blockedCount > 0 && (
+        <div style={{ fontSize: 9, color: '#6b7280', lineHeight: 1.5 }}>
+          {blockedCount} {blockedCount === 1 ? 'row is' : 'rows are'} greyed out because the marker
+          isn&apos;t in the catalogue, so there&apos;s nowhere to file the value. Tell me the marker
+          name and I&apos;ll add it.
+        </div>
+      )}
 
       {rows.map((row, i) => (
         <div key={i} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: blocked(row) ? 'not-allowed' : 'pointer', opacity: blocked(row) ? 0.65 : 1 }}>
             <input
               type="checkbox"
-              checked={chosen[i]}
+              disabled={blocked(row)}
+              checked={chosen[i] && !blocked(row)}
               onChange={e => setChosen(c => c.map((v, j) => (j === i ? e.target.checked : v)))}
               style={{ marginTop: 2, flexShrink: 0 }}
             />

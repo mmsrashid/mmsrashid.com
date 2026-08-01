@@ -23,15 +23,24 @@ const ALIASES: Record<string, string> = {
   meancorpuscularvolume: 'Mean Cell Volume',
   alt: 'ALT',
   alanineaminotransferase: 'ALT',
+  alaninetransaminase: 'ALT',
+  alaninetransferase: 'ALT',
+  alataminotransferase: 'ALT',
   sgpt: 'ALT',
   ast: 'AST',
   aspartateaminotransferase: 'AST',
+  aspartatetransaminase: 'AST',
+  aspartatetransferase: 'AST',
   sgot: 'AST',
   alp: 'ALP',
   alkalinephosphatase: 'ALP',
+  alkphos: 'ALP',
   ggt: 'GGT',
   gammagt: 'GGT',
   gammaglutamyltransferase: 'GGT',
+  gammaglutamyltransaminase: 'GGT',
+  gammaglutamyltranspeptidase: 'GGT',
+  ggtp: 'GGT',
   bilirubin: 'Bilirubin Total',
   totalbilirubin: 'Bilirubin Total',
   tsh: 'TSH',
@@ -156,9 +165,18 @@ export function buildMarkerResolver(markers: BloodMarker[]): MarkerResolver {
         return aliased ? byName.get(normalise(aliased)) ?? null : null
       }
 
-      // Lab reports pad names with parentheticals ("Hemoglobin (Hb)"), so try
-      // the whole string, the part before the brackets, and the part inside.
-      const candidates = [raw, raw.replace(/\([^)]*\)/g, ''), ...(raw.match(/\(([^)]*)\)/g) ?? [])]
+      // Lab reports pad names with parentheticals ("Hemoglobin (Hb)") and often
+      // print two names for the same analyte ("Alanine Transaminase / Alanine
+      // Transferase"). Try the whole string, the part outside the brackets, the
+      // part inside, and each alternative on its own.
+      const alternatives = raw.split(/\s*(?:\/|,|\bor\b)\s*/i)
+      const candidates = [
+        raw,
+        raw.replace(/\([^)]*\)/g, ''),
+        ...(raw.match(/\(([^)]*)\)/g) ?? []),
+        ...alternatives,
+        ...alternatives.map(a => a.replace(/\([^)]*\)/g, '')),
+      ]
         .map(normalise)
         .filter(Boolean)
 
