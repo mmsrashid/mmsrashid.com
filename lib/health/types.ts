@@ -65,6 +65,10 @@ export interface HealthDocument {
   file_size_bytes: number | null
   extracted_marker_count: number
   tags: string[]
+  /** The visit this document belongs to, when known. */
+  appointment_id: string | null
+  /** How the link was made: 'auto' by the matcher, 'manual' by the user. */
+  link_source: 'manual' | 'auto' | null
   created_at: string
 }
 
@@ -178,6 +182,8 @@ export interface ExtractedAppointment {
   appointment_type: string
   doctor_name: string | null
   clinic_name: string | null
+  /** Outcome, follow-up plan or instructions recorded against the visit. */
+  notes: string | null
   confidence: Confidence
 }
 
@@ -258,10 +264,27 @@ export interface AppliedCounts {
   pill_logs: number
 }
 
+/** A shortlisted appointment, enough to name it in the UI without a second fetch. */
+export interface AppointmentBrief {
+  id: string
+  appointment_type: string
+  appointment_date: string
+}
+
 export interface IngestResponse {
   document: HealthDocument
   summary: string
   applied: AppliedCounts
   pending: PendingRecord[]
   errors: string[]
+  /**
+   * Where the document was filed against a visit. `linked` is set only when the
+   * match was unambiguous; otherwise `suggestions` offers candidates to confirm,
+   * because attaching a report to the wrong visit rewrites history.
+   */
+  appointmentLink: {
+    linked: AppointmentBrief | null
+    suggestions: AppointmentBrief[]
+    reason: string
+  } | null
 }

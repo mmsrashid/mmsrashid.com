@@ -96,6 +96,7 @@ export async function POST(req: Request) {
         appointment_type: a.appointment_type.trim(),
         doctor_name: a.doctor_name || null,
         clinic_name: a.clinic_name || null,
+        notes: a.notes || null,
         status: new Date(a.appointment_date) > new Date() ? 'upcoming' : 'completed',
       })
       error ? errors.push(`${a.appointment_type}: ${error.message}`) : applied.appointments++

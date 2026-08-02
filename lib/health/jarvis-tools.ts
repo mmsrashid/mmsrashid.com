@@ -71,8 +71,70 @@ export const HEALTH_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'get_appointments',
-    description: 'Appointments on record, soonest upcoming first.',
-    input_schema: { type: 'object' as const, properties: {}, required: [] },
+    description:
+      'Appointments on record with date, time, clinician, location, status, follow-up notes, and any ' +
+      'documents attached to each visit. Covers past appointments as well as upcoming ones.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        when: {
+          type: 'string',
+          enum: ['all', 'past', 'upcoming'],
+          description: 'Default all.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'add_appointment',
+    description:
+      'Record an appointment, including one that has already happened. Use when the user describes a ' +
+      'past visit or uploads a screenshot of their appointment list. Refuses to create a second ' +
+      'appointment of the same type on the same day.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        appointment_date: { type: 'string', description: 'YYYY-MM-DD, or an ISO date-time when the time is known.' },
+        appointment_type: { type: 'string', description: 'e.g. "Cardiology follow-up", "Blood test", "Cardiac MRI".' },
+        doctor_name: { type: 'string', description: 'Clinician seen.' },
+        clinic_name: { type: 'string', description: 'Hospital or clinic — the location.' },
+        notes: { type: 'string', description: 'Outcome, follow-up plan or instructions, if known.' },
+      },
+      required: ['appointment_date', 'appointment_type'],
+    },
+  },
+  {
+    name: 'update_appointment_notes',
+    description:
+      'Add follow-up notes to an appointment already on record. Appends to any existing notes rather ' +
+      'than replacing them, unless replace is true. Identify the appointment by date and/or type.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        appointment_date: { type: 'string', description: 'YYYY-MM-DD of the appointment.' },
+        appointment_type: { type: 'string', description: 'All or part of the appointment type.' },
+        notes: { type: 'string', description: 'The notes to record.' },
+        replace: { type: 'boolean', description: 'Default false. True overwrites existing notes.' },
+      },
+      required: ['notes'],
+    },
+  },
+  {
+    name: 'attach_document_to_appointment',
+    description:
+      'Attach a stored document — a blood result, scan report or clinic letter — to the appointment it ' +
+      'belongs to. Use get_documents first to get the exact name. Identify the appointment by date ' +
+      'and/or type.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        document_name: { type: 'string', description: 'Document name, or a distinctive part of it.' },
+        appointment_date: { type: 'string', description: 'YYYY-MM-DD of the appointment.' },
+        appointment_type: { type: 'string', description: 'All or part of the appointment type.' },
+      },
+      required: ['document_name'],
+    },
   },
   {
     name: 'get_lifestyle_logs',
@@ -154,6 +216,44 @@ export const HEALTH_TOOL_NAMES = new Set(HEALTH_TOOLS.map(t => t.name))
 
 type DB = SupabaseClient
 const json = (v: unknown) => JSON.stringify(v, null, 2)
+
+interface ApptRow {
+  id: string
+  appointment_date: string
+  appointment_type: string
+  notes: string | null
+}
+
+/**
+ * Finds the one appointment a request refers to, by date and/or type.
+ *
+ * Returns a string on failure so the caller can hand the reason straight back to
+ * the model. Ambiguity is never resolved by guessing: writing notes onto the
+ * wrong visit, or attaching a scan to it, puts false information in a medical
+ * record where it looks authoritative.
+ */
+function findAppointment(rows: ApptRow[], input: Record<string, unknown>): ApptRow | string {
+  if (rows.length === 0) return 'There are no appointments on record.'
+
+  const day = input.appointment_date ? String(input.appointment_date).slice(0, 10) : null
+  const type = input.appointment_type ? String(input.appointment_type).toLowerCase().trim() : null
+  if (!day && !type) return 'Tell me which appointment — a date, a type, or both.'
+
+  let pool = rows
+  if (day) pool = pool.filter(a => a.appointment_date.slice(0, 10) === day)
+  if (type) pool = pool.filter(a => a.appointment_type.toLowerCase().includes(type))
+
+  if (pool.length === 0) {
+    const near = rows.slice(0, 8).map(a => `${a.appointment_date.slice(0, 10)} ${a.appointment_type}`)
+    return `No appointment matched${day ? ` on ${day}` : ''}${type ? ` of type "${type}"` : ''}. ` +
+      `Most recent: ${near.join('; ')}`
+  }
+  if (pool.length > 1) {
+    return `That matches ${pool.length} appointments: ` +
+      `${pool.map(a => `${a.appointment_date.slice(0, 10)} ${a.appointment_type}`).join('; ')}. Ask which one.`
+  }
+  return pool[0]
+}
 
 function statusOf(value: number | null, low: number | null, high: number | null) {
   if (value == null) return 'unknown'
@@ -335,11 +435,128 @@ export async function executeHealthTool(
   }
 
   if (name === 'get_appointments') {
-    const { data } = await supabase
+    const [{ data }, { data: docs }] = await Promise.all([
+      supabase
+        .from('health_appointments')
+        .select('id, appointment_date, appointment_type, doctor_name, clinic_name, status, notes')
+        .order('appointment_date', { ascending: true }),
+      supabase.from('health_documents').select('id, name, type, appointment_id'),
+    ])
+
+    let list = data ?? []
+    const when = String(input.when ?? 'all')
+    const now = new Date().toISOString()
+    if (when === 'past') list = list.filter(a => a.appointment_date < now)
+    if (when === 'upcoming') list = list.filter(a => a.appointment_date >= now)
+
+    // Include the reports attached to each visit, so a question like "what did
+    // the October MRI show" can go straight on to read_document.
+    return json(list.map(a => ({
+      ...a,
+      documents: (docs ?? [])
+        .filter(d => d.appointment_id === a.id)
+        .map(d => ({ name: d.name, type: d.type })),
+    })))
+  }
+
+  if (name === 'add_appointment') {
+    const type = String(input.appointment_type ?? '').trim()
+    const when = String(input.appointment_date ?? '')
+    if (!type) return 'An appointment type is required.'
+    const parsed = new Date(when)
+    if (Number.isNaN(parsed.getTime())) {
+      return `"${when}" is not a date I can read. Use YYYY-MM-DD or an ISO date-time.`
+    }
+
+    // Same visit recorded twice is a real risk when working from screenshots, so
+    // check for one already on that day with the same type.
+    const day = parsed.toISOString().slice(0, 10)
+    const { data: sameDay } = await supabase
       .from('health_appointments')
-      .select('appointment_date, appointment_type, doctor_name, clinic_name, status, notes')
-      .order('appointment_date', { ascending: true })
-    return json(data ?? [])
+      .select('id, appointment_type, appointment_date')
+      .gte('appointment_date', `${day}T00:00:00Z`)
+      .lte('appointment_date', `${day}T23:59:59Z`)
+    const dupe = (sameDay ?? []).find(
+      a => a.appointment_type.trim().toLowerCase() === type.toLowerCase())
+    if (dupe) {
+      return `"${type}" is already recorded on ${day}. Nothing was added — use update_appointment_notes to add to it.`
+    }
+
+    const { data, error } = await supabase
+      .from('health_appointments')
+      .insert({
+        user_id: userId,
+        appointment_date: parsed.toISOString(),
+        appointment_type: type,
+        doctor_name: input.doctor_name ? String(input.doctor_name) : null,
+        clinic_name: input.clinic_name ? String(input.clinic_name) : null,
+        notes: input.notes ? String(input.notes) : null,
+        status: parsed > new Date() ? 'upcoming' : 'completed',
+      })
+      .select()
+      .single()
+
+    if (error) return `Could not save: ${error.message}`
+    return `Recorded "${type}" on ${day}${data.doctor_name ? ` with ${data.doctor_name}` : ''}` +
+      `${data.clinic_name ? ` at ${data.clinic_name}` : ''} as ${data.status}.`
+  }
+
+  if (name === 'update_appointment_notes') {
+    const { data: appts } = await supabase
+      .from('health_appointments')
+      .select('id, appointment_date, appointment_type, notes')
+      .order('appointment_date', { ascending: false })
+
+    const match = findAppointment(appts ?? [], input)
+    if (typeof match === 'string') return match
+
+    const incoming = String(input.notes ?? '').trim()
+    if (!incoming) return 'No notes given, so nothing was changed.'
+
+    // Append rather than replace: notes accumulate across follow-ups, and
+    // silently overwriting a previous entry would lose it.
+    const merged = input.replace === true || !match.notes
+      ? incoming
+      : `${match.notes}\n\n${incoming}`
+
+    const { error } = await supabase
+      .from('health_appointments')
+      .update({ notes: merged })
+      .eq('id', match.id)
+    if (error) return `Could not update: ${error.message}`
+
+    const verb = input.replace === true || !match.notes ? 'Set' : 'Added to'
+    return `${verb} the notes on "${match.appointment_type}" (${match.appointment_date.slice(0, 10)}).`
+  }
+
+  if (name === 'attach_document_to_appointment') {
+    const { data: docs } = await supabase
+      .from('health_documents')
+      .select('id, name, appointment_id')
+    const needle = String(input.document_name ?? '').toLowerCase().trim()
+    if (!needle) return 'No document name given.'
+
+    const hits = (docs ?? []).filter(d => d.name.toLowerCase().includes(needle))
+    if (hits.length === 0) {
+      return `No document matched "${input.document_name}". On record: ${(docs ?? []).map(d => d.name).join(', ')}`
+    }
+    if (hits.length > 1) {
+      return `"${input.document_name}" matches ${hits.length} documents: ${hits.map(d => d.name).join('; ')}. Ask which one.`
+    }
+
+    const { data: appts } = await supabase
+      .from('health_appointments')
+      .select('id, appointment_date, appointment_type, notes')
+      .order('appointment_date', { ascending: false })
+    const match = findAppointment(appts ?? [], input)
+    if (typeof match === 'string') return match
+
+    const { error } = await supabase
+      .from('health_documents')
+      .update({ appointment_id: match.id, link_source: 'manual' })
+      .eq('id', hits[0].id)
+    if (error) return `Could not attach: ${error.message}`
+    return `Attached "${hits[0].name}" to "${match.appointment_type}" on ${match.appointment_date.slice(0, 10)}.`
   }
 
   if (name === 'get_lifestyle_logs') {

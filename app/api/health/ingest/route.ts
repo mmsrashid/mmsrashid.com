@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { extractHealthRecords, isSupportedMime } from '@/lib/health/extract'
 import { buildMarkerResolver } from '@/lib/health/match-marker'
+import { decideAppointmentLink, type AppointmentRef } from '@/lib/health/link-appointment'
 import type {
   AppliedCounts,
   BloodMarker,
@@ -215,6 +216,7 @@ export async function POST(req: Request) {
       appointment_type: a.appointment_type.trim(),
       doctor_name: a.doctor_name || null,
       clinic_name: a.clinic_name || null,
+      notes: a.notes || null,
       status: new Date(when) > new Date() ? 'upcoming' : 'completed',
     })
     if (error) errors.push(`${a.appointment_type}: ${error.message}`)
@@ -328,12 +330,57 @@ export async function POST(req: Request) {
     })
   }
 
+  /* ---- Attach the document to the appointment it came from ---- */
+  // Done after the records above so an appointment created by this same upload
+  // is already on record and can be matched against.
+  let appointmentLink: {
+    linked: { id: string; appointment_type: string; appointment_date: string } | null
+    suggestions: { id: string; appointment_type: string; appointment_date: string }[]
+    reason: string
+  } | null = null
+
+  {
+    // The document's own date, preferring a blood test date over the upload time:
+    // a report uploaded months later still belongs to the day of the test.
+    const docDate =
+      extraction.blood_results.find(r => r.test_date)?.test_date ??
+      extraction.appointments.find(a => a.appointment_date)?.appointment_date ??
+      null
+
+    const { data: appts } = await supabase
+      .from('health_appointments')
+      .select('id, appointment_date, appointment_type, clinic_name')
+
+    const decision = decideAppointmentLink(
+      { type: extraction.document_type, date: docDate, name },
+      (appts ?? []) as AppointmentRef[],
+    )
+
+    if (decision.autoLink) {
+      const { error } = await supabase
+        .from('health_documents')
+        .update({ appointment_id: decision.autoLink.id, link_source: 'auto' })
+        .eq('id', doc.id)
+      if (error) errors.push(`Could not attach to the appointment: ${error.message}`)
+    }
+
+    const brief = (a: AppointmentRef) => ({
+      id: a.id, appointment_type: a.appointment_type, appointment_date: a.appointment_date,
+    })
+    appointmentLink = {
+      linked: decision.autoLink ? brief(decision.autoLink) : null,
+      suggestions: decision.suggestions.map(brief),
+      reason: decision.reason,
+    }
+  }
+
   const body: IngestResponse = {
     document: doc,
     summary: extraction.summary,
     applied,
     pending,
     errors,
+    appointmentLink,
   }
   return NextResponse.json(body)
 }

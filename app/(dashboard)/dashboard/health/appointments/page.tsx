@@ -1,9 +1,12 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import type { HealthAppointment } from '@/lib/health/types'
+import DocumentViewer from '@/components/health/DocumentViewer'
+import type { HealthAppointment, HealthDocument } from '@/lib/health/types'
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<HealthAppointment[]>([])
+  const [documents, setDocuments] = useState<HealthDocument[]>([])
+  const [viewing, setViewing] = useState<HealthDocument | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [error, setError] = useState('')
   const emptyForm = { appointment_date: '', appointment_type: '', doctor_name: '', clinic_name: '', notes: '' }
@@ -11,8 +14,13 @@ export default function AppointmentsPage() {
 
   const [busy, setBusy] = useState<string | null>(null)
 
-  const load = useCallback(() =>
-    fetch('/api/health/appointments').then(r => r.json()).then(d => setAppointments(Array.isArray(d) ? d : [])), [])
+  const load = useCallback(() => Promise.all([
+    fetch('/api/health/appointments').then(r => r.json()),
+    fetch('/api/health/documents').then(r => r.json()),
+  ]).then(([a, d]) => {
+    setAppointments(Array.isArray(a) ? a : [])
+    setDocuments(Array.isArray(d) ? d : [])
+  }), [])
 
   useEffect(() => { load() }, [load])
 
@@ -108,7 +116,35 @@ export default function AppointmentsPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, fontWeight: 700 }}>{a.appointment_type}</div>
                   <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{a.doctor_name}{a.clinic_name ? ` · ${a.clinic_name}` : ''}</div>
-                  {a.notes && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3 }}>{a.notes}</div>}
+                  {a.notes && (
+                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                      {a.notes}
+                    </div>
+                  )}
+                  {(() => {
+                    const attached = documents.filter(d => d.appointment_id === a.id)
+                    if (attached.length === 0) return null
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                        {attached.map(d => (
+                          <button
+                            key={d.id}
+                            onClick={() => setViewing(d)}
+                            title={`Open ${d.name}`}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 20,
+                              padding: '2px 9px', fontSize: 10, color: '#374151', cursor: 'pointer',
+                              maxWidth: 260, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {d.type === 'scan' ? 'ᯓ' : d.type === 'blood_result' ? '🩸' : '📄'}
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 10, background: b.bg, color: b.color, textTransform: 'capitalize' }}>{a.status}</span>
                 <button
@@ -121,6 +157,17 @@ export default function AppointmentsPage() {
           })}
         </div>
       ))}
+
+      {viewing && (
+        <DocumentViewer
+          doc={viewing}
+          onClose={() => setViewing(null)}
+          onDeleted={id => {
+            setDocuments(ds => ds.filter(d => d.id !== id))
+            setViewing(null)
+          }}
+        />
+      )}
     </div>
   )
 }

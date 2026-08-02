@@ -53,6 +53,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   if (body.tags !== undefined) patch.tags = Array.isArray(body.tags) ? body.tags : []
 
+  // Attach to, or detach from, an appointment. A link made here is 'manual' so
+  // it can be told apart from one the matcher guessed.
+  if (body.appointment_id !== undefined) {
+    if (body.appointment_id === null || body.appointment_id === '') {
+      patch.appointment_id = null
+      patch.link_source = null
+    } else {
+      const { data: appt } = await supabase
+        .from('health_appointments')
+        .select('id')
+        .eq('id', body.appointment_id)
+        .maybeSingle()
+      if (!appt) return NextResponse.json({ error: 'Unknown appointment.' }, { status: 400 })
+      patch.appointment_id = body.appointment_id
+      patch.link_source = 'manual'
+    }
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }

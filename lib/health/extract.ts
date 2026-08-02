@@ -91,11 +91,18 @@ const RECORD_TOOL = {
               description: 'ISO 8601 date or date-time. Null if no date is stated.',
             },
             appointment_type: { type: 'string', description: 'e.g. "Cardiology follow-up".' },
-            doctor_name: { type: ['string', 'null'] },
-            clinic_name: { type: ['string', 'null'] },
+            doctor_name: { type: ['string', 'null'], description: 'Clinician seen or named.' },
+            clinic_name: { type: ['string', 'null'], description: 'Hospital, clinic or location.' },
+            notes: {
+              type: ['string', 'null'],
+              description:
+                'What came out of the visit: findings, outcome, follow-up plan, instructions given, ' +
+                'or anything written under notes. Quote or summarise faithfully — do not infer a ' +
+                'clinical conclusion that is not written down. Null if nothing is recorded.',
+            },
             confidence: CONFIDENCE,
           },
-          required: ['appointment_date', 'appointment_type', 'doctor_name', 'clinic_name', 'confidence'],
+          required: ['appointment_date', 'appointment_type', 'doctor_name', 'clinic_name', 'notes', 'confidence'],
         },
       },
       sleep: {
