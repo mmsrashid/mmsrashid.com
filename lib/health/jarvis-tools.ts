@@ -1,4 +1,4 @@
-import type Anthropic from '@anthropic-ai/sdk'
+import Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildMarkerResolver } from './match-marker'
 import type { BloodMarker, BloodResult } from './types'
@@ -74,6 +74,39 @@ export const HEALTH_TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: { days: { type: 'number', description: 'Days to look back. Default 30, max 400.' } },
       required: [],
+    },
+  },
+  {
+    name: 'get_documents',
+    description:
+      'The documents library: letters, scan and imaging reports, prescriptions and lab PDFs on record, with type, tags and upload date. Use this before saying anything is unavailable — imaging and scan reports live here, not in the blood results.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['blood_result', 'letter', 'scan', 'prescription', 'other'],
+          description: 'Filter by document type. Use "scan" for imaging such as MRI, CT or ultrasound.',
+        },
+        search: { type: 'string', description: 'Filter by name or tag.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'read_document',
+    description:
+      'Reads the actual contents of a stored document and returns its clinical detail. Use this when asked what a report says, shows or concludes — get_documents only lists what exists. Identify the document by name from get_documents.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Document name, or a distinctive part of it.' },
+        question: {
+          type: 'string',
+          description: 'What the user wants to know, so the reading focuses on the relevant part.',
+        },
+      },
+      required: ['name'],
     },
   },
   {
@@ -272,6 +305,86 @@ export async function executeHealthTool(
     }))
     const avg = perDay.length ? Math.round(perDay.reduce((s, d) => s + d.pct, 0) / perDay.length) : null
     return json({ active_medicines: (meds ?? []).length, days_logged: perDay.length, average_pct: avg, per_day: perDay })
+  }
+
+  if (name === 'get_documents') {
+    let query = supabase
+      .from('health_documents')
+      .select('id, name, type, tags, file_size_bytes, extracted_marker_count, created_at')
+      .order('created_at', { ascending: false })
+    if (input.type) query = query.eq('type', String(input.type))
+    const { data } = await query
+
+    let list = data ?? []
+    const search = String(input.search ?? '').toLowerCase()
+    if (search) {
+      list = list.filter(d =>
+        d.name.toLowerCase().includes(search) ||
+        (d.tags ?? []).some((t: string) => t.toLowerCase().includes(search)))
+    }
+    if (list.length === 0) {
+      return input.type
+        ? `No documents of type "${input.type}" on record.`
+        : 'No documents on record.'
+    }
+    return json(list.map(d => ({
+      name: d.name,
+      type: d.type,
+      tags: d.tags,
+      uploaded: d.created_at?.slice(0, 10),
+      markers_extracted: d.extracted_marker_count,
+      note: 'Use read_document with this name to read its contents.',
+    })))
+  }
+
+  if (name === 'read_document') {
+    if (!process.env.ANTHROPIC_API_KEY) return 'Document reading is unavailable: ANTHROPIC_API_KEY is not configured.'
+
+    const wanted = String(input.name ?? '').toLowerCase()
+    const { data: docs } = await supabase
+      .from('health_documents')
+      .select('id, name, type, storage_path')
+      .order('created_at', { ascending: false })
+
+    const doc = (docs ?? []).find(d => d.name.toLowerCase() === wanted)
+      ?? (docs ?? []).find(d => d.name.toLowerCase().includes(wanted))
+    if (!doc) {
+      return `No document matching "${input.name}". On record: ${(docs ?? []).map(d => d.name).join(', ') || 'none'}`
+    }
+
+    const { data: file, error } = await supabase.storage.from('health-documents').download(doc.storage_path)
+    if (error || !file) return `Could not retrieve "${doc.name}": ${error?.message ?? 'no file'}`
+
+    const base64 = Buffer.from(await file.arrayBuffer()).toString('base64')
+    const ext = doc.storage_path.split('.').pop()?.toLowerCase() ?? ''
+    const mime = ext === 'pdf' ? 'application/pdf'
+      : ext === 'png' ? 'image/png'
+      : ext === 'webp' ? 'image/webp'
+      : ext === 'gif' ? 'image/gif'
+      : 'image/jpeg'
+
+    const source = mime === 'application/pdf'
+      ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64 } }
+      : { type: 'image' as const, source: { type: 'base64' as const, media_type: mime as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif', data: base64 } }
+
+    const question = input.question ? String(input.question) : 'Summarise the clinical content.'
+    const client = new Anthropic()
+    const res = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      messages: [{
+        role: 'user',
+        content: [source, {
+          type: 'text',
+          text: `This is a document from a personal health record. The user asked: "${question}"\n\n`
+            + `Report what the document actually states — findings, impressions, conclusions, measurements, dates and the reporting clinician where present. `
+            + `Quote key wording rather than paraphrasing conclusions. `
+            + `If the document does not address the question, say so plainly. Never infer a diagnosis that is not written.`,
+        }],
+      }],
+    })
+    const text = res.content.find(b => b.type === 'text')
+    return `Document: ${doc.name} (${doc.type})\n\n${text && text.type === 'text' ? text.text : '(no readable content)'}`
   }
 
   if (name === 'add_blood_marker') {
