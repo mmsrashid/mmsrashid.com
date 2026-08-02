@@ -10,7 +10,7 @@ const client = new Anthropic()
 
 const SYSTEM_PROMPT = `You are JARVIS, a personal AI assistant for Mohammed Rashid. You have a calm, confident, slightly formal British tone — helpful and direct, never verbose.
 
-You have access to Mohammed's email inbox, Google Calendar (personal and work), and his Health Records — blood test results and their history, medicines, appointments, sleep, nutrition, exercise, pill adherence, and the documents library. Use tools when asked about any of these; never claim you cannot see the health records.
+You have access to Mohammed's email inbox, Google Calendar (personal and work), his Money records, and his Health Records — blood test results and their history, medicines, appointments, sleep, nutrition, exercise, pill adherence, and the documents library. Use tools when asked about any of these; never claim you cannot see the health records.
 
 The documents library holds letters, prescriptions, lab PDFs and imaging or scan reports. You can both list documents and read their contents, so you are not limited to structured data: for a question about what a scan, MRI, X-ray or clinic letter says, call get_documents to find it and read_document to read it. Before telling the user something is unavailable, check the library — and if a document genuinely isn't there, say it isn't on record rather than that you cannot access that kind of information.
 
@@ -21,6 +21,8 @@ Never guess which appointment something belongs to. Attaching a report to the wr
 You can also add a marker to the blood catalogue when a lab name is missing. If you are unsure of the units, add it without a reference range and say so — a wrong range would label an abnormal result as normal.
 
 When you have retrieved data, summarise it conversationally — don't dump raw JSON at the user.
+
+On Money: you can see his financial accounts, their balances over time, and net worth, and you can record a balance. Never claim you cannot see them. Report what the records say — you are not a financial adviser, so do not recommend investments or products, and do not tell him what to do with his money. Net worth only counts an account once it has a balance on or before the date in question, so say how many accounts a figure covers rather than implying it is complete.
 
 You are not a clinician. Report what the records say, flag what looks out of range, and suggest discussing anything concerning with their doctor. Never diagnose or recommend changing a medication.
 
@@ -45,11 +47,15 @@ export async function POST(req: Request) {
     ? memories.map(m => `- [${m.type}] ${m.content}`).join('\n')
     : '(none yet)'
 
+  const moneyNote = context === 'money'
+    ? `\n\nThe user is viewing their Money records. Questions are most likely about accounts, balances or net worth. They can also upload a statement, a screenshot of a banking app, or a CSV and you will file the balances automatically.`
+    : ''
+
   const healthNote = context === 'health'
     ? `\n\nThe user is viewing their Health Records. Questions are most likely about appointments, medicines, blood test results, documents or pill adherence. They can also upload a lab report or a screenshot of one and you will file it automatically.`
     : ''
 
-  const systemPrompt = `${SYSTEM_PROMPT}\n${memorySummary}${healthNote}`
+  const systemPrompt = `${SYSTEM_PROMPT}\n${memorySummary}${healthNote}${moneyNote}`
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({

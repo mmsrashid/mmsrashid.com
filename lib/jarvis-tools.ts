@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { listMessages } from '@/lib/email'
 import { getCalendarEvents } from '@/lib/google-calendar'
 import { HEALTH_TOOLS, HEALTH_TOOL_NAMES, executeHealthTool } from '@/lib/health/jarvis-tools'
+import { MONEY_TOOLS, MONEY_TOOL_NAMES, executeMoneyTool } from '@/lib/money/jarvis-tools'
 
 /** Passed through so health tools can query the caller's records under RLS. */
 export interface ToolContext {
@@ -50,7 +51,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
   },
 ]
 
-export const TOOLS: Anthropic.Tool[] = [...BASE_TOOLS, ...HEALTH_TOOLS]
+export const TOOLS: Anthropic.Tool[] = [...BASE_TOOLS, ...HEALTH_TOOLS, ...MONEY_TOOLS]
 
 export async function executeTool(
   name: string,
@@ -60,6 +61,11 @@ export async function executeTool(
   if (HEALTH_TOOL_NAMES.has(name)) {
     if (!ctx) return 'Health records are unavailable in this context.'
     return executeHealthTool(name, input, ctx.supabase, ctx.userId)
+  }
+
+  if (MONEY_TOOL_NAMES.has(name)) {
+    if (!ctx) return 'Money records are unavailable in this context.'
+    return executeMoneyTool(name, input, ctx.supabase, ctx.userId)
   }
 
   if (name === 'get_current_time') {

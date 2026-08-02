@@ -12,6 +12,7 @@ const NAV = [
   { href: '/dashboard/email', label: 'Email', icon: '✉' },
   { href: '/dashboard/calendar', label: 'Calendar', icon: '📅' },
   { href: '/dashboard/health', label: 'Health', icon: '🏥' },
+  { href: '/dashboard/money', label: 'Money', icon: '💰' },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
