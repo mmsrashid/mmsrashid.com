@@ -30,6 +30,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (body.start_date !== undefined) patch.start_date = body.start_date || null
   if (body.end_date !== undefined) patch.end_date = body.end_date || null
 
+  // Stopping implies an end date and restarting clears it. Derive it here rather
+  // than in each caller: the UI's Stop button sent status alone, which left the
+  // row stopped with no end date while other paths stamped one.
+  if (patch.status !== undefined && body.end_date === undefined) {
+    patch.end_date = patch.status === 'stopped' ? new Date().toISOString().slice(0, 10) : null
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }

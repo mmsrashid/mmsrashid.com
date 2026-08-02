@@ -326,7 +326,7 @@ export async function executeHealthTool(
 
     const { error } = await supabase
       .from('health_medicines')
-      .update({ status, ...(status === 'stopped' ? { end_date: new Date().toISOString().slice(0, 10) } : { end_date: null }) })
+      .update({ status, end_date: status === 'stopped' ? new Date().toISOString().slice(0, 10) : null })
       .in('id', matches.map(m => m.id))
     if (error) return `Could not update: ${error.message}`
 
