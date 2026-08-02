@@ -10,7 +10,7 @@ const tokens = (s: string) =>
   s.toLowerCase().split(/[^a-z0-9]+/).filter(t => t && !NOISE.has(t) && !/^\d+(\.\d+)?$/.test(t))
 
 /** Levenshtein, short-circuited on length — enough to forgive one typo. */
-function editDistance(a: string, b: string): number {
+export function editDistance(a: string, b: string): number {
   if (Math.abs(a.length - b.length) > 2) return 99
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
   for (let i = 1; i <= a.length; i++) {

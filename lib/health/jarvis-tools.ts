@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildMarkerResolver } from './match-marker'
+import { editDistance } from './match-medicine'
 import type { BloodMarker, BloodResult } from './types'
 
 /**
@@ -48,6 +49,24 @@ export const HEALTH_TOOLS: Anthropic.Tool[] = [
       type: 'object' as const,
       properties: { include_stopped: { type: 'boolean', description: 'Default false.' } },
       required: [],
+    },
+  },
+  {
+    name: 'set_medicine_status',
+    description:
+      'Move a medicine between the active and stopped lists. Use when the user says they have stopped, ' +
+      'come off, or restarted a medicine. Names are matched loosely so minor misspellings are fine. ' +
+      'If the name matches more than one row (a twice-daily drug has a separate morning and night entry), ' +
+      'the tool returns the candidates instead of guessing — relay them and ask which the user means, or ' +
+      'pass all=true if they clearly mean both.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        medicine_name: { type: 'string', description: 'Medicine name as the user said it.' },
+        status: { type: 'string', enum: ['active', 'stopped'], description: 'The list to move it to.' },
+        all: { type: 'boolean', description: 'Apply to every match, e.g. both doses of a twice-daily drug. Default false.' },
+      },
+      required: ['medicine_name', 'status'],
     },
   },
   {
@@ -263,6 +282,58 @@ export async function executeHealthTool(
     return json(list)
   }
 
+  if (name === 'set_medicine_status') {
+    const wanted = String(input.medicine_name ?? '').trim()
+    const status = String(input.status ?? '')
+    if (!wanted) return 'No medicine name given.'
+    if (status !== 'active' && status !== 'stopped') return "status must be 'active' or 'stopped'."
+
+    const { data: meds } = await supabase
+      .from('health_medicines')
+      .select('id, name, dose, dose_unit, frequency, status')
+    if (!meds?.length) return 'No medicines on record.'
+
+    // Loose matching: the name is coming from speech or typing, so exact
+    // equality would fail on "tigacurler" for "Ticagrelor".
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const w = norm(wanted)
+    let matches = meds.filter(m => {
+      const n = norm(m.name)
+      if (n.includes(w) || w.includes(n)) return true
+      // Compare first words so a dose suffix doesn't wreck the distance.
+      const head = norm(m.name.split(/[\s(]/)[0])
+      return head.length >= 6 && w.length >= 6 && editDistance(head, w.split(/\s+/)[0] ?? w) <= 2
+    })
+    if (matches.length === 0) {
+      return `No medicine matched "${wanted}". On record: ${meds.map(m => m.name).join(', ')}`
+    }
+
+    const describe = (m: typeof meds[number]) =>
+      `${m.name}${m.dose ? ` ${m.dose}${m.dose_unit ?? ''}` : ''}${m.frequency ? ` (${m.frequency})` : ''}`
+
+    // A twice-daily drug is two rows. Guessing which one the user meant could
+    // silently leave them recorded as still taking half a dose.
+    if (matches.length > 1 && !input.all) {
+      return `"${wanted}" matches ${matches.length} entries: ${matches.map(describe).join('; ')}. ` +
+        `Ask the user which one to mark ${status}, or confirm they mean all of them.`
+    }
+
+    const already = matches.filter(m => m.status === status)
+    matches = matches.filter(m => m.status !== status)
+    if (matches.length === 0) {
+      return `${already.map(describe).join('; ')} — already ${status}. Nothing changed.`
+    }
+
+    const { error } = await supabase
+      .from('health_medicines')
+      .update({ status, ...(status === 'stopped' ? { end_date: new Date().toISOString().slice(0, 10) } : { end_date: null }) })
+      .in('id', matches.map(m => m.id))
+    if (error) return `Could not update: ${error.message}`
+
+    return `Marked ${status}: ${matches.map(describe).join('; ')}.` +
+      (already.length ? ` (${already.map(describe).join('; ')} was already ${status}.)` : '')
+  }
+
   if (name === 'get_appointments') {
     const { data } = await supabase
       .from('health_appointments')
@@ -308,24 +379,38 @@ export async function executeHealthTool(
   }
 
   if (name === 'get_documents') {
-    let query = supabase
+    const { data: all } = await supabase
       .from('health_documents')
       .select('id, name, type, tags, file_size_bytes, extracted_marker_count, created_at')
       .order('created_at', { ascending: false })
-    if (input.type) query = query.eq('type', String(input.type))
-    const { data } = await query
 
-    let list = data ?? []
+    const matchesText = (d: { name: string; tags: string[] | null }, needle: string) =>
+      d.name.toLowerCase().includes(needle) ||
+      (d.tags ?? []).some(t => t.toLowerCase().includes(needle))
+
+    // Words that identify imaging regardless of how a document was classified.
+    const IMAGING = /\b(scan|mri|ct|ultrasound|echo|echocardiogram|x-?ray|angiogram|radiology|imaging)\b/i
+    const isImaging = (d: { name: string; tags: string[] | null; type: string }) =>
+      d.type === 'scan' || IMAGING.test(d.name) || (d.tags ?? []).some(t => IMAGING.test(t))
+
+    let list = all ?? []
     const search = String(input.search ?? '').toLowerCase()
-    if (search) {
-      list = list.filter(d =>
-        d.name.toLowerCase().includes(search) ||
-        (d.tags ?? []).some((t: string) => t.toLowerCase().includes(search)))
+    const wantType = input.type ? String(input.type) : null
+
+    if (wantType === 'scan') {
+      // Documents are auto-classified on upload and imaging is often filed as
+      // "other" or "letter", so match on content words rather than trusting the
+      // stored type. A missed MRI report is worse than an extra hit.
+      list = list.filter(isImaging)
+    } else if (wantType) {
+      const exact = list.filter(d => d.type === wantType)
+      list = exact.length ? exact : list.filter(d => matchesText(d, wantType))
     }
+    if (search) list = list.filter(d => matchesText(d, search))
+
     if (list.length === 0) {
-      return input.type
-        ? `No documents of type "${input.type}" on record.`
-        : 'No documents on record.'
+      const names = (all ?? []).map(d => d.name)
+      return `No documents matched. All documents on record (${names.length}): ${names.join(', ') || 'none'}`
     }
     return json(list.map(d => ({
       name: d.name,

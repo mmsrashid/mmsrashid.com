@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { DOCUMENT_TYPES } from '@/lib/health/types'
 
 /**
  * Returns a short-lived signed URL for viewing the original file. The bucket is
@@ -29,6 +30,43 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const kind = ext === 'pdf' ? 'pdf' : ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext) ? 'image' : 'other'
 
   return NextResponse.json({ url: signed.signedUrl, kind, name: doc.name, document: doc })
+}
+
+/** Correct a document's classification or name — auto-typing on upload is imperfect. */
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json()
+  const patch: Record<string, unknown> = {}
+  if (body.type !== undefined) {
+    if (!DOCUMENT_TYPES.includes(body.type)) {
+      return NextResponse.json({ error: `type must be one of: ${DOCUMENT_TYPES.join(', ')}` }, { status: 400 })
+    }
+    patch.type = body.type
+  }
+  if (body.name !== undefined) {
+    if (!String(body.name).trim()) return NextResponse.json({ error: 'name cannot be empty.' }, { status: 400 })
+    patch.name = String(body.name).trim()
+  }
+  if (body.tags !== undefined) patch.tags = Array.isArray(body.tags) ? body.tags : []
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .from('health_documents')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .maybeSingle()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json(data)
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
