@@ -142,9 +142,17 @@ A pure function in `lib/money/net-worth.ts`, not inline in the page, so it is un
 shared with the JARVIS tools:
 
 ```ts
-buildNetWorthSeries(accounts, balances) →
-  Array<{ date: string, assets: number, liabilities: number, net: number, accountsCounted: number }>
+buildNetWorthSeries(accounts, balances) → {
+  points: Array<{
+    date: string, assets: number, liabilities: number, net: number,
+    accountsCounted: number, accountsTotal: number,
+  }>,
+  currencyWarning: string | null,
+}
 ```
+
+The points are wrapped in an object so the currency warning has somewhere to live — a bare array
+would force the caller to re-derive it.
 
 Rules:
 
