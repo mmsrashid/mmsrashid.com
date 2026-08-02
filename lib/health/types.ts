@@ -119,6 +119,29 @@ export interface ExerciseLog {
   created_at: string
 }
 
+/* ---------- Vitals ---------- */
+
+export const VITAL_SOURCES = ['manual', 'device', 'clinic', 'import'] as const
+export type VitalSource = (typeof VITAL_SOURCES)[number]
+
+export interface VitalReading {
+  id: string
+  user_id: string
+  measured_at: string
+  systolic: number | null
+  diastolic: number | null
+  heart_rate: number | null
+  /**
+   * Anything a device reports beyond BP and heart rate — SpO2, HRV, resting
+   * rate, respiratory rate, skin temperature, steps. Kept loose so a watch sync
+   * can add fields without a migration.
+   */
+  metrics: Record<string, number | string | null>
+  source: VitalSource
+  notes: string | null
+  created_at: string
+}
+
 /* ---------- Multi-category ingest ---------- */
 
 export const DOCUMENT_TYPES = ['blood_result', 'letter', 'scan', 'prescription', 'other'] as const

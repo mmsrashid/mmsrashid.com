@@ -10,6 +10,7 @@ const TABS = [
   { label: 'Messages', icon: '💬', href: '/dashboard/health/messages' },
   { label: 'Medicines', icon: '💊', href: '/dashboard/health/medicines' },
   { label: 'Test Results', icon: '🩸', href: '/dashboard/health/blood' },
+  { label: 'Vitals', icon: '❤️', href: '/dashboard/health/vitals' },
   { label: 'Sleep', icon: '😴', href: '/dashboard/health/sleep' },
   { label: 'Nutrition', icon: '🥗', href: '/dashboard/health/nutrition' },
   { label: 'Exercise', icon: '🏃', href: '/dashboard/health/exercise' },
