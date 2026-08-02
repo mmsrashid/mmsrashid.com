@@ -14,7 +14,7 @@ export async function GET(req: Request) {
 
   const { data: medicines, error: mErr } = await supabase
     .from('health_medicines')
-    .select('id, name, dose, dose_unit, frequency, status')
+    .select('id, name, dose, dose_unit, frequency, route, start_date, end_date, status')
     .eq('user_id', user.id)
     .eq('status', 'active')
 

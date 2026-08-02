@@ -1,8 +1,13 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import AdherenceTrend from '@/components/health/AdherenceTrend'
+import { adherenceMode, isDaily, wasActiveOn, MODE_LABEL } from '@/lib/health/adherence'
 
-interface Medicine { id: string; name: string; dose: number | null; dose_unit: string | null; frequency: string | null }
+interface Medicine {
+  id: string; name: string; dose: number | null; dose_unit: string | null
+  frequency: string | null; route: string | null
+  start_date: string | null; end_date: string | null
+}
 interface PillLog { id: string; medicine_id: string; log_date: string; taken: boolean; taken_at: string | null }
 
 function getDates(days: number): string[] {
@@ -107,23 +112,27 @@ export default function PillTrackerPage() {
     </div>
   )
 
-  // Today's adherence summary
-  const todayTotal = medicines.length
-  const todayTaken = medicines.filter(m => getLog(m.id, today)?.taken).length
+  // Only daily medicines, and only once they'd started, count toward adherence.
+  // Otherwise a rescue spray and a 28-day injection read as missed doses.
+  const dailyMeds = medicines.filter(isDaily)
+  const otherMeds = medicines.filter(m => !isDaily(m))
+  const dueOn = (date: string) => dailyMeds.filter(m => wasActiveOn(m, date))
+
+  const todayDue = dueOn(today)
+  const todayTotal = todayDue.length
+  const todayTaken = todayDue.filter(m => getLog(m.id, today)?.taken).length
   const pct = todayTotal > 0 ? Math.round((todayTaken / todayTotal) * 100) : 0
 
-  // Adherence per day across every date that has any log, so imported history counts.
+  // Adherence per day, denominator = daily medicines actually due that day, so
+  // imported history isn't penalised for drugs not yet started.
   const historyDays = (() => {
-    const byDate = new Map<string, { taken: number; total: number }>()
-    for (const l of logs) {
-      const e = byDate.get(l.log_date) ?? { taken: 0, total: 0 }
-      e.total++
-      if (l.taken) e.taken++
-      byDate.set(l.log_date, e)
-    }
-    return [...byDate.entries()]
-      .map(([date, v]) => ({ date, ...v }))
-      .sort((a, b) => a.date.localeCompare(b.date))
+    const dates = [...new Set(logs.map(l => l.log_date))].sort()
+    const dailyIds = new Set(dailyMeds.map(m => m.id))
+    return dates.map(date => {
+      const due = dueOn(date)
+      const taken = logs.filter(l => l.log_date === date && l.taken && dailyIds.has(l.medicine_id)).length
+      return { date, taken, total: due.length }
+    }).filter(d => d.total > 0)
   })()
 
   return (
@@ -160,6 +169,12 @@ export default function PillTrackerPage() {
           />
         </div>
         <AdherenceTrend days={historyDays} />
+        {otherMeds.length > 0 && (
+          <p style={{ fontSize: 9, color: '#9ca3af', marginTop: 6, lineHeight: 1.6 }}>
+            Excluded from adherence because they aren&apos;t daily doses:{' '}
+            {otherMeds.map(m => `${m.name} (${MODE_LABEL[adherenceMode(m)].toLowerCase()})`).join(', ')}.
+          </p>
+        )}
         {importMsg.length > 0 && (
           <div style={{ marginTop: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}>
             {importMsg.map((l, i) => (
@@ -187,7 +202,7 @@ export default function PillTrackerPage() {
             </tr>
           </thead>
           <tbody>
-            {medicines.map((med, mi) => (
+            {dailyMeds.map((med, mi) => (
               <tr key={med.id} style={{ background: mi % 2 === 0 ? '#fff' : '#fafafa' }}>
                 <td style={{ padding: '8px 14px', borderBottom: '1px solid #f9fafb', position: 'sticky', left: 0, background: mi % 2 === 0 ? '#fff' : '#fafafa', zIndex: 1 }}>
                   <div style={{ fontWeight: 700 }}>{med.name}</div>

@@ -26,6 +26,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (body[k] !== undefined) patch[k] = body[k] || null
   }
   if (body.dose !== undefined) patch.dose = body.dose === null || body.dose === '' ? null : Number(body.dose)
+  // Dates matter for adherence: a medicine shouldn't be scored before it started.
+  if (body.start_date !== undefined) patch.start_date = body.start_date || null
   if (body.end_date !== undefined) patch.end_date = body.end_date || null
 
   if (Object.keys(patch).length === 0) {
