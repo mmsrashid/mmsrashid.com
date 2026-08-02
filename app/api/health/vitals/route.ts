@@ -83,6 +83,23 @@ export async function POST(req: Request) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // The table's range checks are the backstop against a mistyped reading, but
+    // raw Postgres text ("violates check constraint health_vitals_sy…") is no
+    // use to someone entering a number by hand. Name the field instead.
+    const bad = /check constraint "health_vitals_(\w+?)_check"/.exec(error.message)
+    if (bad) {
+      const limits: Record<string, string> = {
+        systolic: 'systolic must be between 40 and 300',
+        diastolic: 'diastolic must be between 20 and 200',
+        heart_rate: 'heart rate must be between 20 and 250',
+      }
+      return NextResponse.json(
+        { error: `That reading looks out of range — ${limits[bad[1]] ?? 'check the values'}.` },
+        { status: 400 },
+      )
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json(data)
 }
