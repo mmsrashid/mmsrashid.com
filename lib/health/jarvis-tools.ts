@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { buildMarkerResolver } from './match-marker'
 import type { BloodMarker, BloodResult } from './types'
 
 /**
@@ -185,11 +186,33 @@ export async function executeHealthTool(
   }
 
   if (name === 'get_marker_history') {
-    const wanted = String(input.marker_name ?? '').toLowerCase()
+    const raw = String(input.marker_name ?? '')
+    const wanted = raw.toLowerCase()
     const list = await markersWithLatest(supabase)
-    const marker = list.find(m => m.name.toLowerCase() === wanted)
+
+    // Substring alone fails on reordered words — "fasting glucose" never
+    // matches "Glucose Fasting" — so fall back to the alias resolver and then
+    // to token overlap.
+    let marker = list.find(m => m.name.toLowerCase() === wanted)
       ?? list.find(m => m.name.toLowerCase().includes(wanted))
-    if (!marker) return `No marker matching "${input.marker_name}".`
+
+    if (!marker) {
+      const { data: catalogue } = await supabase.from('health_blood_markers').select('*')
+      const resolved = buildMarkerResolver((catalogue ?? []) as BloodMarker[]).resolve(raw)
+      if (resolved) marker = list.find(m => m._id === resolved.id)
+    }
+
+    if (!marker) {
+      const tokens = wanted.split(/\s+/).filter(t => t.length > 2)
+      if (tokens.length) {
+        marker = list.find(m => tokens.every(t => m.name.toLowerCase().includes(t)))
+      }
+    }
+
+    if (!marker) {
+      const near = list.filter(m => m.latest_value != null).map(m => m.name).slice(0, 40)
+      return `No marker matching "${raw}". Markers with readings on record: ${near.join(', ')}`
+    }
     const { data } = await supabase
       .from('health_blood_results')
       .select('value, test_date, lab_name')

@@ -49,31 +49,31 @@ export async function POST(req: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const response = await client.messages.stream({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          system: systemPrompt,
-          tools: TOOLS,
-          messages,
-        })
+        // Loop rather than a single follow-up: a question often needs two hops
+        // (find the marker, then read its history). With only one round the
+        // second request was dropped and the user got an empty answer.
+        const MAX_ROUNDS = 5
+        let convo: Anthropic.MessageParam[] = messages
 
-        for await (const event of response) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`))
+        for (let round = 0; round < MAX_ROUNDS; round++) {
+          const response = client.messages.stream({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            system: systemPrompt,
+            tools: TOOLS,
+            messages: convo,
+          })
+
+          for await (const event of response) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`))
+            }
           }
 
-          if (event.type === 'message_delta' && event.delta.stop_reason === 'tool_use') {
-            // Handle tool calls — get the full message to extract tool use blocks
-          }
-        }
+          const finalMessage = await response.finalMessage()
+          if (finalMessage.stop_reason !== 'tool_use') break
 
-        // Check if we need to handle tool calls
-        const finalMessage = await response.finalMessage()
-
-        if (finalMessage.stop_reason === 'tool_use') {
-          // Execute all tool calls
           const toolResults: Anthropic.ToolResultBlockParam[] = []
-
           for (const block of finalMessage.content) {
             if (block.type === 'tool_use') {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'tool_start', name: block.name })}\n\n`))
@@ -83,23 +83,15 @@ export async function POST(req: Request) {
             }
           }
 
-          // Send tool results back and stream final response
-          const followUp = client.messages.stream({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 1024,
-            system: systemPrompt,
-            tools: TOOLS,
-            messages: [
-              ...messages,
-              { role: 'assistant', content: finalMessage.content },
-              { role: 'user', content: toolResults },
-            ],
-          })
+          convo = [
+            ...convo,
+            { role: 'assistant', content: finalMessage.content },
+            { role: 'user', content: toolResults },
+          ]
 
-          for await (const event of followUp) {
-            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`))
-            }
+          // Don't leave the user staring at nothing if the model keeps looping.
+          if (round === MAX_ROUNDS - 1) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', text: '\n\nI wasn’t able to finish that lookup — try asking more specifically.' })}\n\n`))
           }
         }
 
