@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import AdherenceTrend from '@/components/health/AdherenceTrend'
-import { adherenceMode, isDaily, wasActiveOn, MODE_LABEL } from '@/lib/health/adherence'
+import AdherenceByMedicine from '@/components/health/AdherenceByMedicine'
+import { isDaily, wasActiveOn } from '@/lib/health/adherence'
 
 interface Medicine {
   id: string; name: string; dose: number | null; dose_unit: string | null
@@ -169,12 +170,6 @@ export default function PillTrackerPage() {
           />
         </div>
         <AdherenceTrend days={historyDays} />
-        {otherMeds.length > 0 && (
-          <p style={{ fontSize: 9, color: '#9ca3af', marginTop: 6, lineHeight: 1.6 }}>
-            Excluded from adherence because they aren&apos;t daily doses:{' '}
-            {otherMeds.map(m => `${m.name} (${MODE_LABEL[adherenceMode(m)].toLowerCase()})`).join(', ')}.
-          </p>
-        )}
         {importMsg.length > 0 && (
           <div style={{ marginTop: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 10px' }}>
             {importMsg.map((l, i) => (
@@ -182,6 +177,17 @@ export default function PillTrackerPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Adherence per medicine */}
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 700 }}>Adherence by medicine</h3>
+          <p style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+            Across the whole recorded history, counting each medicine only on days it was prescribed.
+          </p>
+        </div>
+        <AdherenceByMedicine medicines={medicines} logs={logs} />
       </div>
 
       {/* Table */}
