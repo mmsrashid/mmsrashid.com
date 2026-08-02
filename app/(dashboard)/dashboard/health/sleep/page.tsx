@@ -16,11 +16,27 @@ export default function SleepPage() {
   const [form, setForm] = useState(empty)
   const [showForm, setShowForm] = useState(false)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
 
   const load = () =>
     fetch('/api/health/sleep').then(r => r.json()).then(d => setLogs(Array.isArray(d) ? d : []))
 
   useEffect(() => { load() }, [])
+
+
+  async function remove(id: string, when: string) {
+    if (!confirm(`Delete the ${when} night? This cannot be undone.`)) return
+    setBusy(id)
+    setError('')
+    try {
+      const res = await fetch(`/api/health/sleep/${id}`, { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not delete.')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function save() {
     if (!form.sleep_date) return setError('A date is required.')
@@ -105,6 +121,8 @@ export default function SleepPage() {
             <span style={{ minWidth: 70, color: '#6b7280' }}>{l.quality_score != null ? `${l.quality_score}/100` : ''}</span>
             <span style={{ minWidth: 110, color: '#6b7280' }}>{l.bedtime && l.wake_time ? `${l.bedtime.slice(0, 5)} → ${l.wake_time.slice(0, 5)}` : ''}</span>
             <span style={{ color: '#9ca3af', flex: 1 }}>{l.notes ?? ''}</span>
+            <button onClick={() => remove(l.id, l.sleep_date)} disabled={busy === l.id}
+              style={{ fontSize: 10, color: '#991b1b', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}>Delete</button>
           </div>
         ))}
       </div>

@@ -23,12 +23,28 @@ export default function NutritionPage() {
   const [form, setForm] = useState(empty)
   const [showForm, setShowForm] = useState(false)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
   const [metric, setMetric] = useState<Metric>('calories')
 
   const load = () =>
     fetch('/api/health/nutrition').then(r => r.json()).then(d => setLogs(Array.isArray(d) ? d : []))
 
   useEffect(() => { load() }, [])
+
+
+  async function remove(id: string, when: string) {
+    if (!confirm(`Delete the ${when} day? This cannot be undone.`)) return
+    setBusy(id)
+    setError('')
+    try {
+      const res = await fetch(`/api/health/nutrition/${id}`, { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not delete.')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function save() {
     if (!form.log_date) return setError('A date is required.')
@@ -127,6 +143,8 @@ export default function NutritionPage() {
             </span>
             <span style={{ minWidth: 80, color: '#6b7280' }}>{l.water_ml != null ? `${l.water_ml} ml` : ''}</span>
             <span style={{ color: '#9ca3af', flex: 1 }}>{l.notes ?? ''}</span>
+            <button onClick={() => remove(l.id, l.log_date)} disabled={busy === l.id}
+              style={{ fontSize: 10, color: '#991b1b', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}>Delete</button>
           </div>
         ))}
       </div>

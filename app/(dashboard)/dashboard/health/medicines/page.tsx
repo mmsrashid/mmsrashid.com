@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { HealthMedicine } from '@/lib/health/types'
 
 /** Extracted names often already carry the title, so don't double it up. */
@@ -11,12 +11,51 @@ export default function MedicinesPage() {
   const [medicines, setMedicines] = useState<HealthMedicine[]>([])
   const [showForm, setShowForm] = useState(false)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
   const emptyForm = { name: '', dose: '', dose_unit: 'mg', frequency: '', route: 'oral', start_date: '', prescribing_doctor: '', notes: '' }
   const [form, setForm] = useState(emptyForm)
 
-  useEffect(() => {
-    fetch('/api/health/medicines').then(r => r.json()).then(d => setMedicines(Array.isArray(d) ? d : []))
-  }, [])
+  const load = useCallback(() =>
+    fetch('/api/health/medicines').then(r => r.json()).then(d => setMedicines(Array.isArray(d) ? d : [])), [])
+
+  useEffect(() => { load() }, [load])
+
+  async function setStatus(m: HealthMedicine, status: 'active' | 'stopped') {
+    setBusy(m.id)
+    setError('')
+    try {
+      const res = await fetch(`/api/health/medicines/${m.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not update.')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function remove(m: HealthMedicine) {
+    // Deleting cascades this drug's pill logs, so say so before doing it.
+    const ok = confirm(
+      `Delete "${m.name}" entirely?\n\n` +
+      `This also removes its pill-tracker history and cannot be undone.\n\n` +
+      `If you simply stopped taking it, use Stop instead — that keeps the history.`,
+    )
+    if (!ok) return
+    setBusy(m.id)
+    setError('')
+    try {
+      const res = await fetch(`/api/health/medicines/${m.id}`, { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not delete.')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function save() {
     if (!form.name.trim()) return setError('Name is required.')
@@ -80,6 +119,17 @@ export default function MedicinesPage() {
                 {m.prescribing_doctor && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>{withTitle(m.prescribing_doctor)}</div>}
               </div>
               <span style={{ fontSize: 9, fontWeight: 600, padding: '3px 9px', borderRadius: 10, background: m.status === 'active' ? '#d1fae5' : '#f3f4f6', color: m.status === 'active' ? '#065f46' : '#6b7280' }}>{m.status === 'active' ? 'Active' : 'Stopped'}</span>
+              <div style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
+                {m.status === 'active' ? (
+                  <button onClick={() => setStatus(m, 'stopped')} disabled={busy === m.id} title="Keeps the pill-tracker history"
+                    style={{ fontSize: 10, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}>Stop</button>
+                ) : (
+                  <button onClick={() => setStatus(m, 'active')} disabled={busy === m.id}
+                    style={{ fontSize: 10, color: '#065f46', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}>Restart</button>
+                )}
+                <button onClick={() => remove(m)} disabled={busy === m.id}
+                  style={{ fontSize: 10, color: '#991b1b', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}>Delete</button>
+              </div>
             </div>
           ))}
         </div>

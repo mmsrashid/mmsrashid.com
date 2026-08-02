@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { HealthAppointment } from '@/lib/health/types'
 
 export default function AppointmentsPage() {
@@ -9,9 +9,26 @@ export default function AppointmentsPage() {
   const emptyForm = { appointment_date: '', appointment_type: '', doctor_name: '', clinic_name: '', notes: '' }
   const [form, setForm] = useState(emptyForm)
 
-  useEffect(() => {
-    fetch('/api/health/appointments').then(r => r.json()).then(d => setAppointments(Array.isArray(d) ? d : []))
-  }, [])
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const load = useCallback(() =>
+    fetch('/api/health/appointments').then(r => r.json()).then(d => setAppointments(Array.isArray(d) ? d : [])), [])
+
+  useEffect(() => { load() }, [load])
+
+  async function remove(a: HealthAppointment) {
+    if (!confirm(`Delete "${a.appointment_type}"? This cannot be undone.`)) return
+    setBusy(a.id)
+    setError('')
+    try {
+      const res = await fetch(`/api/health/appointments/${a.id}`, { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not delete.')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function save() {
     // appointment_date and appointment_type are NOT NULL in the schema.
@@ -94,6 +111,11 @@ export default function AppointmentsPage() {
                   {a.notes && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3 }}>{a.notes}</div>}
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 10, background: b.bg, color: b.color, textTransform: 'capitalize' }}>{a.status}</span>
+                <button
+                  onClick={() => remove(a)}
+                  disabled={busy === a.id}
+                  style={{ fontSize: 10, color: '#991b1b', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}
+                >Delete</button>
               </div>
             )
           })}

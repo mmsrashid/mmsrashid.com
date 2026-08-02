@@ -25,11 +25,27 @@ export default function ExercisePage() {
   const [form, setForm] = useState(empty)
   const [showForm, setShowForm] = useState(false)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
 
   const load = () =>
     fetch('/api/health/exercise').then(r => r.json()).then(d => setLogs(Array.isArray(d) ? d : []))
 
   useEffect(() => { load() }, [])
+
+
+  async function remove(id: string, when: string) {
+    if (!confirm(`Delete the ${when} session? This cannot be undone.`)) return
+    setBusy(id)
+    setError('')
+    try {
+      const res = await fetch(`/api/health/exercise/${id}`, { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not delete.')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function save() {
     if (!form.exercise_date) return setError('A date is required.')
@@ -135,6 +151,8 @@ export default function ExercisePage() {
               <span style={{ minWidth: 70, color: '#6b7280' }}>{l.distance_km != null ? `${l.distance_km} km` : ''}</span>
               <span style={{ minWidth: 60, color: '#6b7280' }}>{l.avg_heart_rate != null ? `${l.avg_heart_rate} bpm` : ''}</span>
               <span style={{ color: '#9ca3af', flex: 1 }}>{l.notes ?? ''}</span>
+              <button onClick={() => remove(l.id, `${l.exercise_date} ${l.activity_type}`)} disabled={busy === l.id}
+                style={{ fontSize: 10, color: '#991b1b', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px' }}>Delete</button>
             </div>
           )
         })}
