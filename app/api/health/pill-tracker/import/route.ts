@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { parsePillCsv } from '@/lib/health/parse-pill-csv'
-import { normalise } from '@/lib/health/match-marker'
+import { buildMedicineResolver } from '@/lib/health/match-medicine'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -48,24 +48,7 @@ export async function POST(req: Request) {
     .eq('status', 'active')
   if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 })
 
-  // Match a column to a medicine by normalised name, then by containment either
-  // way so "Ramipril 2.5mg" and "ramipril" both land on the same row.
-  const byNorm = new Map<string, { id: string; name: string }>()
-  for (const m of medicines ?? []) byNorm.set(normalise(m.name), m)
-
-  const resolve = (header: string) => {
-    const n = normalise(header)
-    if (!n) return null
-    const exact = byNorm.get(n)
-    if (exact) return exact
-    let best: { id: string; name: string } | null = null
-    let bestLen = 0
-    for (const [key, m] of byNorm) {
-      if (key.length < 3) continue
-      if ((n.includes(key) || key.includes(n)) && key.length > bestLen) { best = m; bestLen = key.length }
-    }
-    return best
-  }
+  const resolve = buildMedicineResolver(medicines ?? [])
 
   const columnMap = new Map<string, { id: string; name: string }>()
   const unmatchedColumns: string[] = []
