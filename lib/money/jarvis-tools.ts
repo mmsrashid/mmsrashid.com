@@ -2,7 +2,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildNetWorthSeries, latestNetWorth } from './net-worth'
 import { buildAccountResolver } from './match-account'
+import { buildSpendingSummary } from './spending-summary'
+import { applyRules } from './categorise'
 import type { MoneyAccount, MoneyBalance } from './types'
+import type { MoneyCategory, MoneyCategoryRule, MoneyTransaction } from './spending-types'
 
 export const MONEY_TOOLS: Anthropic.Tool[] = [
   {
@@ -41,6 +44,47 @@ export const MONEY_TOOLS: Anthropic.Tool[] = [
         as_of: { type: 'string', description: 'YYYY-MM-DD.' },
       },
       required: ['account_name', 'balance', 'as_of'],
+    },
+  },
+  {
+    name: 'get_spending_summary',
+    description:
+      'Spending for a month: total out, total in, net, and a category breakdown. Transfers between ' +
+      "the user's own accounts are excluded from both totals. Always states how many transactions " +
+      'are uncategorised, since the breakdown is incomplete without them.',
+    input_schema: {
+      type: 'object' as const,
+      properties: { month: { type: 'string', description: 'YYYY-MM. Defaults to the current month.' } },
+      required: [],
+    },
+  },
+  {
+    name: 'get_transactions',
+    description: 'Transactions, filtered. Use for "what did I spend at X" or "show me last week".',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: 'Match against the description.' },
+        from: { type: 'string', description: 'YYYY-MM-DD inclusive.' },
+        to: { type: 'string', description: 'YYYY-MM-DD inclusive.' },
+        uncategorised_only: { type: 'boolean' },
+        limit: { type: 'number', description: 'Default 50, max 200.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'add_category_rule',
+    description:
+      'Create a rule so descriptions containing a phrase get a category, then apply it to ' +
+      'uncategorised transactions. Use when the user says what something should be categorised as.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        pattern: { type: 'string', description: 'Text to look for in the description.' },
+        category_name: { type: 'string', description: 'Category to assign. Must already exist.' },
+      },
+      required: ['pattern', 'category_name'],
     },
   },
 ]
@@ -142,6 +186,103 @@ export async function executeMoneyTool(
 
     if (error) return `Could not save: ${error.message}`
     return `Recorded ${balance} for ${match.name} as of ${asOf}.`
+  }
+
+  if (name === 'get_spending_summary') {
+    const month = String(input.month ?? new Date().toISOString().slice(0, 7))
+    const [{ data: txns }, { data: cats }, { data: accts }] = await Promise.all([
+      supabase.from('money_transactions').select('*'),
+      supabase.from('money_categories').select('*'),
+      supabase.from('money_accounts').select('*'),
+    ])
+    const summary = buildSpendingSummary(
+      (txns ?? []) as MoneyTransaction[],
+      (cats ?? []) as MoneyCategory[],
+      (accts ?? []) as MoneyAccount[],
+      month,
+    )
+    if (summary.currencyWarning) return summary.currencyWarning
+    if (summary.transactionCount === 0) return `No transactions recorded for ${month}.`
+    return json({
+      month: summary.month,
+      total_out: summary.totalOut,
+      total_in: summary.totalIn,
+      net: summary.net,
+      by_category: summary.byCategory.map(c => ({
+        category: c.name, total: c.total, share_percent: Math.round(c.share * 100),
+      })),
+      // Always reported, so an incomplete breakdown cannot be presented as complete.
+      uncategorised_count: summary.uncategorisedCount,
+      uncategorised_value: summary.uncategorisedValue,
+      transactions: summary.transactionCount,
+      note: 'Transfers between own accounts are excluded from both totals.',
+    })
+  }
+
+  if (name === 'get_transactions') {
+    const limit = Math.min(Number(input.limit) || 50, 200)
+    let q = supabase.from('money_transactions').select('*').order('txn_date', { ascending: false })
+    if (input.from) q = q.gte('txn_date', String(input.from).slice(0, 10))
+    if (input.to) q = q.lte('txn_date', String(input.to).slice(0, 10))
+    if (input.uncategorised_only === true) q = q.is('category_id', null)
+
+    const { data } = await q
+    let rows = (data ?? []) as MoneyTransaction[]
+    const search = String(input.search ?? '').toLowerCase()
+    if (search) rows = rows.filter(t => t.description.toLowerCase().includes(search))
+    if (rows.length === 0) return 'No transactions matched.'
+
+    const { data: cats } = await supabase.from('money_categories').select('id, name')
+    const catName = new Map((cats ?? []).map(c => [c.id as string, c.name as string]))
+
+    return json({
+      matched: rows.length,
+      showing: Math.min(rows.length, limit),
+      total: Math.round(rows.reduce((a, t) => a + Number(t.amount), 0) * 100) / 100,
+      transactions: rows.slice(0, limit).map(t => ({
+        date: t.txn_date, description: t.description, amount: Number(t.amount),
+        category: t.category_id ? catName.get(t.category_id) ?? 'Unknown' : 'Uncategorised',
+      })),
+    })
+  }
+
+  if (name === 'add_category_rule') {
+    const pattern = String(input.pattern ?? '').trim()
+    const wanted = String(input.category_name ?? '').trim().toLowerCase()
+    if (!pattern) return 'A pattern is required.'
+
+    const { data: cats } = await supabase.from('money_categories').select('id, name')
+    const matches = (cats ?? []).filter(c => (c.name as string).toLowerCase().includes(wanted))
+    if (matches.length === 0) {
+      return `No category matched "${input.category_name}". On record: ${(cats ?? []).map(c => c.name).join(', ')}`
+    }
+    if (matches.length > 1) {
+      return `"${input.category_name}" matches ${matches.map(c => c.name).join(', ')}. Ask which one.`
+    }
+
+    const { error } = await supabase.from('money_category_rules').insert({
+      user_id: userId, pattern, match_type: 'contains', category_id: matches[0].id, priority: 100,
+    })
+    if (error) return `Could not save the rule: ${error.message}`
+
+    // Apply it immediately; rules are deterministic so this is safe to repeat.
+    const [{ data: rules }, { data: txns }] = await Promise.all([
+      supabase.from('money_category_rules').select('*'),
+      supabase.from('money_transactions').select('*').is('category_id', null),
+    ])
+    const before = (txns ?? []) as MoneyTransaction[]
+    const after = applyRules(before, (rules ?? []) as MoneyCategoryRule[])
+    let changed = 0
+    for (let i = 0; i < after.length; i++) {
+      if (after[i].category_id === before[i].category_id) continue
+      const { error: upErr } = await supabase
+        .from('money_transactions')
+        .update({ category_id: after[i].category_id, category_source: after[i].category_source })
+        .eq('id', before[i].id)
+      if (!upErr) changed++
+    }
+
+    return `Rule saved: descriptions containing "${pattern}" are now ${matches[0].name}. ${changed} transaction(s) recategorised.`
   }
 
   return `Unknown money tool: ${name}`

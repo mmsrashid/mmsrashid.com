@@ -6,6 +6,8 @@ import type { ExtractedBalance } from '@/lib/money/types'
 
 const TABS = [
   { label: 'Overview', icon: '📊', href: '/dashboard/money/overview' },
+  { label: 'Spending', icon: '🧾', href: '/dashboard/money/spending' },
+  { label: 'Transactions', icon: '📃', href: '/dashboard/money/transactions' },
   { label: 'Accounts', icon: '🏦', href: '/dashboard/money/accounts' },
   { label: 'History', icon: '🕘', href: '/dashboard/money/history' },
 ]
@@ -51,6 +53,21 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
       if (data.applied) bits.push(`Filed ${data.applied} balance${data.applied === 1 ? '' : 's'}.`)
       if (data.pending?.length) bits.push(`${data.pending.length} need${data.pending.length === 1 ? 's' : ''} your check below.`)
       if (data.unmatched?.length) bits.push(`No matching account for: ${data.unmatched.join(', ')}. Add the account, then re-upload.`)
+
+      const tx = data.transactions
+      if (tx) {
+        if (tx.filed) bits.push(`Filed ${tx.filed} transaction${tx.filed === 1 ? '' : 's'}.`)
+        if (tx.skipped_duplicates) bits.push(`${tx.skipped_duplicates} already on record, skipped.`)
+        if (tx.ai_categorised) bits.push(`${tx.ai_categorised} categorised by me — worth checking in Transactions.`)
+        if (tx.low_confidence) bits.push(`${tx.low_confidence} transaction line(s) were unclear and not filed.`)
+        if (tx.unresolved_account) bits.push('I could not tell which account those transactions belong to.')
+        if (tx.warning) bits.push(tx.warning)
+        // Offering the rules is what turns a one-off AI guess into a permanent,
+        // deterministic decision the user controls.
+        if (tx.proposed_rules?.length) {
+          bits.push(`I can turn ${tx.proposed_rules.length} of those into reusable rules from the Transactions tab.`)
+        }
+      }
       say(bits.join(' ') || 'Nothing to file from that one.')
       setPending(data.pending ?? [])
       setPendingDocId(data.document_id ?? null)

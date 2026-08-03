@@ -3,7 +3,13 @@ import { NextResponse } from 'next/server'
 import { extractBalances, isSupportedMoneyMime } from '@/lib/money/extract'
 import { buildAccountResolver } from '@/lib/money/match-account'
 import { parseBalanceCsv } from '@/lib/money/parse-csv'
+import { parseTransactionCsv } from '@/lib/money/parse-transaction-csv'
+import { extractTransactions } from '@/lib/money/extract-transactions'
+import { buildImportKeys } from '@/lib/money/dedupe-key'
+import { applyRules } from '@/lib/money/categorise'
+import { suggestCategories, type CategorySuggestion } from '@/lib/money/suggest-categories'
 import type { ExtractedBalance } from '@/lib/money/types'
+import type { MoneyCategory, MoneyCategoryRule, ParsedTransaction } from '@/lib/money/spending-types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -103,6 +109,15 @@ export async function POST(req: Request) {
     return { ...e, account_id: match?.id ?? null }
   })
 
+  // Which account is this statement for? If the balances all resolved to one
+  // account, that is the answer. If they disagree, or none matched, the
+  // transactions cannot be filed safely and are reported back instead.
+  const resolvedIds = [...new Set(resolved.map(r => r.account_id).filter(Boolean))]
+  const singleAccount = (accounts ?? []).length === 1 ? (accounts ?? [])[0] : null
+  const targetAccountId = (resolvedIds.length === 1 ? (resolvedIds[0] as string) : null)
+    ?? singleAccount?.id
+    ?? null
+
   // Auto-apply only rows that are confident, matched to an account, and dated.
   // Everything else is held for review: an unreviewed wrong balance corrupts
   // the whole series from that date forward.
@@ -130,8 +145,137 @@ export async function POST(req: Request) {
     else applied.push(data)
   }
 
+  /* ---- Transactions ---- */
+  // A statement carries both a closing balance and a transaction list, so one
+  // upload should populate both rather than needing two.
+  let txnResult: {
+    filed: number
+    skipped_duplicates: number
+    low_confidence: number
+    unresolved_account: boolean
+    ai_categorised: number
+    proposed_rules: CategorySuggestion[]
+    warning: string | null
+  } | null = null
+
+  {
+    let parsed: ParsedTransaction[] = []
+    let lowConfidence: ParsedTransaction[] = []
+    let warning: string | null = null
+
+    if (isCsv) {
+      const r = parseTransactionCsv(bytes.toString('utf8'))
+      parsed = r.rows
+      if (r.errors.length && r.rows.length === 0) warning = r.errors[0]
+    } else {
+      try {
+        const r = await extractTransactions({
+          data: bytes.toString('base64'),
+          mediaType: file.type || 'image/png',
+        })
+        parsed = r.rows
+        lowConfidence = r.lowConfidence
+        warning = r.warning
+      } catch (err) {
+        // The balances above are already filed; losing them because the
+        // transaction pass failed would be worse than reporting the failure.
+        warning = `Could not read the transaction list: ${String(err)}`
+      }
+    }
+
+    if (parsed.length === 0) {
+      txnResult = {
+        filed: 0, skipped_duplicates: 0, low_confidence: lowConfidence.length,
+        unresolved_account: false, ai_categorised: 0, proposed_rules: [], warning,
+      }
+    } else if (!targetAccountId) {
+      txnResult = {
+        filed: 0, skipped_duplicates: 0, low_confidence: lowConfidence.length,
+        unresolved_account: true, ai_categorised: 0, proposed_rules: [],
+        warning: 'Found transactions but could not tell which account they belong to. Say which account and re-upload.',
+      }
+    } else {
+      // A statement is authoritative for its own window, so keys come from the
+      // batch alone. Re-importing regenerates the same keys and the upsert
+      // collapses them; only genuinely new rows land as new keys.
+      const keys = buildImportKeys(targetAccountId, parsed)
+
+      const { data: existingKeys } = await supabase
+        .from('money_transactions')
+        .select('dedupe_key')
+        .eq('account_id', targetAccountId)
+      const stored = new Set((existingKeys ?? []).map(r => r.dedupe_key as string))
+      const alreadyThere = keys.filter(k => stored.has(k)).length
+
+      const { data: rules } = await supabase.from('money_category_rules').select('*')
+      const categorised = applyRules(
+        parsed.map(pt => ({ ...pt, category_id: null as string | null, category_source: null as never })),
+        (rules ?? []) as MoneyCategoryRule[],
+      )
+
+      // Rules first, Claude only for what they missed. On a first import that is
+      // everything; once suggestions have been accepted as rules it is almost
+      // nothing, and the result becomes deterministic.
+      const unmatched = categorised.filter(c => !c.category_id).map(c => c.description)
+      let suggestions: CategorySuggestion[] = []
+      if (unmatched.length > 0) {
+        const { data: cats } = await supabase.from('money_categories').select('*')
+        try {
+          suggestions = await suggestCategories(unmatched, (cats ?? []) as MoneyCategory[])
+        } catch {
+          // A suggestion failure must not lose the transactions themselves; they
+          // simply stay uncategorised and visible.
+          suggestions = []
+        }
+        const byDescription = new Map(suggestions.map(x => [x.description.toLowerCase(), x]))
+        for (const c of categorised) {
+          if (c.category_id) continue
+          const hit = byDescription.get(c.description.trim().toLowerCase())
+          if (!hit) continue
+          c.category_id = hit.category_id
+          c.category_source = 'ai' as never
+        }
+      }
+
+      const payload = parsed.map((pt, i) => ({
+        user_id: user.id,
+        account_id: targetAccountId,
+        txn_date: pt.txn_date,
+        description: pt.description,
+        amount: pt.amount,
+        category_id: categorised[i].category_id,
+        category_source: categorised[i].category_source,
+        document_id: doc.id,
+        external_id: pt.external_id,
+        dedupe_key: keys[i],
+      }))
+
+      const { data: inserted, error: txnErr } = await supabase
+        .from('money_transactions')
+        .upsert(payload, { onConflict: 'user_id,dedupe_key' })
+        .select('id')
+
+      // Distinct proposals only, so the UI can offer "make this a rule" once per
+      // merchant rather than once per transaction.
+      const proposedRules = [...new Map(
+        suggestions.map(x => [`${x.suggested_pattern.toLowerCase()}|${x.category_id}`, x]),
+      ).values()]
+
+      txnResult = {
+        filed: txnErr ? 0 : Math.max((inserted ?? []).length - alreadyThere, 0),
+        skipped_duplicates: alreadyThere,
+        low_confidence: lowConfidence.length,
+        unresolved_account: false,
+        ai_categorised: suggestions.length,
+        proposed_rules: proposedRules,
+        warning: txnErr ? txnErr.message : warning,
+      }
+    }
+  }
+
   return NextResponse.json({
     document_id: doc.id,
+    transactions: txnResult,
     applied: applied.length,
     pending,
     unmatched: resolved.filter(r => !r.account_id).map(r => r.account_name),

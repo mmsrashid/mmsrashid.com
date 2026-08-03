@@ -1,9 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { ACCOUNT_KINDS, ACCOUNT_KIND_LABEL, type AccountKind, type MoneyAccount } from '@/lib/money/types'
+import { reconcileAccount } from '@/lib/money/reconcile'
+import { ACCOUNT_KINDS, ACCOUNT_KIND_LABEL, type AccountKind, type MoneyAccount, type MoneyBalance } from '@/lib/money/types'
+import type { MoneyTransaction } from '@/lib/money/spending-types'
 
 export default function MoneyAccountsPage() {
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
+  const [balances, setBalances] = useState<MoneyBalance[]>([])
+  const [txns, setTxns] = useState<MoneyTransaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -17,11 +21,16 @@ export default function MoneyAccountsPage() {
   const [amount, setAmount] = useState('')
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
 
-  const load = () =>
-    fetch('/api/money/accounts').then(r => r.json()).then(d => {
-      setAccounts(Array.isArray(d) ? d : [])
-      setLoading(false)
-    })
+  const load = () => Promise.all([
+    fetch('/api/money/accounts').then(r => r.json()),
+    fetch('/api/money/balances').then(r => r.json()),
+    fetch('/api/money/transactions').then(r => r.json()),
+  ]).then(([a, b, t]) => {
+    setAccounts(Array.isArray(a) ? a : [])
+    setBalances(Array.isArray(b) ? b : [])
+    setTxns(Array.isArray(t) ? t : [])
+    setLoading(false)
+  })
 
   useEffect(() => { void load() }, [])
 
@@ -156,6 +165,35 @@ export default function MoneyAccountsPage() {
                       </button>
                     </div>
                   )}
+                  {(() => {
+                    // Only mismatches are shown. A clean interval needs no
+                    // commentary, and a line per healthy one would bury the gap
+                    // that matters.
+                    const gbp = (n: number) =>
+                      n.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })
+                    const bad = reconcileAccount(
+                      balances.filter(b => b.account_id === a.id),
+                      txns.filter(t => t.account_id === a.id),
+                    ).filter(i => !i.ok)
+                    if (bad.length === 0) return null
+                    return (
+                      <div style={{
+                        marginTop: 6, padding: '6px 8px', background: '#fffbeb',
+                        border: '1px solid #fde68a', borderRadius: 6,
+                        fontSize: 10, color: '#92400e', lineHeight: 1.6,
+                      }}>
+                        {bad.map(i => (
+                          <div key={`${i.from}-${i.to}`}>
+                            {i.from} to {i.to}: the balance moved {gbp(i.balanceChange)} but recorded
+                            transactions total {gbp(i.transactionSum)} — {gbp(Math.abs(i.unexplained))}{' '}
+                            {i.unexplained < 0
+                              ? 'appears to have left the account unrecorded.'
+                              : 'arrived that no transaction accounts for.'}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               ))}
           </div>
