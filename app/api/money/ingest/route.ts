@@ -196,8 +196,8 @@ export async function POST(req: Request) {
       }
     } else {
       // A statement is authoritative for its own window, so keys come from the
-      // batch alone. Re-importing regenerates the same keys and the upsert
-      // collapses them; only genuinely new rows land as new keys.
+      // batch alone. Re-importing regenerates the same keys, so a row already
+      // stored is recognisable by its key.
       const keys = buildImportKeys(targetAccountId, parsed)
 
       const { data: existingKeys } = await supabase
@@ -205,55 +205,78 @@ export async function POST(req: Request) {
         .select('dedupe_key')
         .eq('account_id', targetAccountId)
       const stored = new Set((existingKeys ?? []).map(r => r.dedupe_key as string))
-      const alreadyThere = keys.filter(k => stored.has(k)).length
 
-      const { data: rules } = await supabase.from('money_category_rules').select('*')
-      const categorised = applyRules(
-        parsed.map(pt => ({ ...pt, category_id: null as string | null, category_source: null as never })),
-        (rules ?? []) as MoneyCategoryRule[],
-      )
+      // Only rows not already stored are touched at all.
+      //
+      // Re-writing an existing row would overwrite whatever category it has
+      // acquired since — including one the user set by hand. That was a real bug:
+      // re-importing a statement turned a manual category back into an AI guess,
+      // silently discarding the most reliable signal in the system. Skipping
+      // stored rows also avoids paying for a categorisation call on transactions
+      // that were categorised on a previous import.
+      const fresh = parsed
+        .map((pt, i) => ({ pt, key: keys[i] }))
+        .filter(x => !stored.has(x.key))
+      const alreadyThere = parsed.length - fresh.length
 
-      // Rules first, Claude only for what they missed. On a first import that is
-      // everything; once suggestions have been accepted as rules it is almost
-      // nothing, and the result becomes deterministic.
-      const unmatched = categorised.filter(c => !c.category_id).map(c => c.description)
       let suggestions: CategorySuggestion[] = []
-      if (unmatched.length > 0) {
-        const { data: cats } = await supabase.from('money_categories').select('*')
-        try {
-          suggestions = await suggestCategories(unmatched, (cats ?? []) as MoneyCategory[])
-        } catch {
-          // A suggestion failure must not lose the transactions themselves; they
-          // simply stay uncategorised and visible.
-          suggestions = []
+      let inserted: { id: string }[] = []
+      let txnErr: { message: string } | null = null
+
+      if (fresh.length > 0) {
+        const { data: rules } = await supabase.from('money_category_rules').select('*')
+        const categorised = applyRules(
+          fresh.map(x => ({
+            ...x.pt,
+            category_id: null as string | null,
+            category_source: null as never,
+          })),
+          (rules ?? []) as MoneyCategoryRule[],
+        )
+
+        // Rules first, Claude only for what they missed. On a first import that
+        // is everything; once suggestions have been accepted as rules it is
+        // almost nothing, and the result becomes deterministic.
+        const unmatched = categorised.filter(c => !c.category_id).map(c => c.description)
+        if (unmatched.length > 0) {
+          const { data: cats } = await supabase.from('money_categories').select('*')
+          try {
+            suggestions = await suggestCategories(unmatched, (cats ?? []) as MoneyCategory[])
+          } catch {
+            // A suggestion failure must not lose the transactions themselves;
+            // they simply stay uncategorised and visible.
+            suggestions = []
+          }
+          const byDescription = new Map(suggestions.map(x => [x.description.toLowerCase(), x]))
+          for (const c of categorised) {
+            if (c.category_id) continue
+            const hit = byDescription.get(c.description.trim().toLowerCase())
+            if (!hit) continue
+            c.category_id = hit.category_id
+            c.category_source = 'ai' as never
+          }
         }
-        const byDescription = new Map(suggestions.map(x => [x.description.toLowerCase(), x]))
-        for (const c of categorised) {
-          if (c.category_id) continue
-          const hit = byDescription.get(c.description.trim().toLowerCase())
-          if (!hit) continue
-          c.category_id = hit.category_id
-          c.category_source = 'ai' as never
-        }
+
+        const payload = fresh.map((x, i) => ({
+          user_id: user.id,
+          account_id: targetAccountId,
+          txn_date: x.pt.txn_date,
+          description: x.pt.description,
+          amount: x.pt.amount,
+          category_id: categorised[i].category_id,
+          category_source: categorised[i].category_source,
+          document_id: doc.id,
+          external_id: x.pt.external_id,
+          dedupe_key: x.key,
+        }))
+
+        const res = await supabase
+          .from('money_transactions')
+          .upsert(payload, { onConflict: 'user_id,dedupe_key' })
+          .select('id')
+        inserted = (res.data ?? []) as { id: string }[]
+        txnErr = res.error
       }
-
-      const payload = parsed.map((pt, i) => ({
-        user_id: user.id,
-        account_id: targetAccountId,
-        txn_date: pt.txn_date,
-        description: pt.description,
-        amount: pt.amount,
-        category_id: categorised[i].category_id,
-        category_source: categorised[i].category_source,
-        document_id: doc.id,
-        external_id: pt.external_id,
-        dedupe_key: keys[i],
-      }))
-
-      const { data: inserted, error: txnErr } = await supabase
-        .from('money_transactions')
-        .upsert(payload, { onConflict: 'user_id,dedupe_key' })
-        .select('id')
 
       // Distinct proposals only, so the UI can offer "make this a rule" once per
       // merchant rather than once per transaction.
@@ -262,7 +285,7 @@ export async function POST(req: Request) {
       ).values()]
 
       txnResult = {
-        filed: txnErr ? 0 : Math.max((inserted ?? []).length - alreadyThere, 0),
+        filed: txnErr ? 0 : inserted.length,
         skipped_duplicates: alreadyThere,
         low_confidence: lowConfidence.length,
         unresolved_account: false,
