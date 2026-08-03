@@ -103,7 +103,7 @@ Every table needs a policy covering **every operation the app performs**. `004_h
 `health_blood_markers` a SELECT policy only, which silently broke both its POST route and a JARVIS
 tool with "new row violates row-level security policy".
 
-## The four decisions that matter
+## The five decisions that matter
 
 ### 1. Duplicate detection
 
