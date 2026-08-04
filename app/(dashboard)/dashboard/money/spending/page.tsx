@@ -24,9 +24,16 @@ export default function SpendingPage() {
       fetch('/api/money/categories').then(r => r.json()),
       fetch('/api/money/accounts').then(r => r.json()),
     ]).then(([t, c, a]) => {
-      setTxns(Array.isArray(t) ? t : [])
+      const rows: MoneyTransaction[] = Array.isArray(t) ? t : []
+      setTxns(rows)
       setCats(Array.isArray(c) ? c : [])
       setAccounts(Array.isArray(a) ? a : [])
+      // Open on the most recent month that actually has transactions. Defaulting
+      // to the calendar month shows a page of zeros whenever the latest statement
+      // is a month or two behind, which reads as "no data" rather than "not this
+      // month".
+      const latest = rows.map(r => r.txn_date.slice(0, 7)).sort().pop()
+      if (latest) setMonth(latest)
       setLoading(false)
     })
   }, [])
