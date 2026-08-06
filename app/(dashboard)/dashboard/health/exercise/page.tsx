@@ -2,8 +2,10 @@
 import { useEffect, useState } from 'react'
 import MetricTrend from '@/components/health/MetricTrend'
 import { INTENSITIES, type ExerciseLog } from '@/lib/health/types'
+import { localToday } from '@/lib/local-date'
+import { toLocalDate } from '@/lib/local-date'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localToday()
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }
 const field: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 10px', fontSize: 12, outline: 'none' }
@@ -81,7 +83,7 @@ export default function ExercisePage() {
     .map(([date, value]) => ({ date, value }))
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7)
-  const thisWeek = logs.filter(l => l.exercise_date >= weekAgo.toISOString().slice(0, 10))
+  const thisWeek = logs.filter(l => l.exercise_date >= toLocalDate(weekAgo))
   const weekMinutes = thisWeek.reduce((s, l) => s + Number(l.duration_min ?? 0), 0)
 
   return (

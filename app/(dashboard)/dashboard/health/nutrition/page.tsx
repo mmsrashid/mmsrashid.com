@@ -2,8 +2,9 @@
 import { useEffect, useState } from 'react'
 import MetricTrend from '@/components/health/MetricTrend'
 import type { NutritionLog } from '@/lib/health/types'
+import { localToday } from '@/lib/local-date'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localToday()
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }
 const field: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 10px', fontSize: 12, outline: 'none' }

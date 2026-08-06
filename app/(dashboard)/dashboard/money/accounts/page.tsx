@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { reconcileAccount } from '@/lib/money/reconcile'
 import { ACCOUNT_KINDS, ACCOUNT_KIND_LABEL, type AccountKind, type MoneyAccount, type MoneyBalance } from '@/lib/money/types'
 import type { MoneyTransaction } from '@/lib/money/spending-types'
+import { localToday } from '@/lib/local-date'
 
 export default function MoneyAccountsPage() {
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
@@ -19,7 +20,7 @@ export default function MoneyAccountsPage() {
 
   const [balanceFor, setBalanceFor] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
-  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
+  const [asOf, setAsOf] = useState(localToday())
 
   const load = () => Promise.all([
     fetch('/api/money/accounts').then(r => r.json()),

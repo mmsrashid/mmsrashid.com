@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import AdherenceTrend from '@/components/health/AdherenceTrend'
 import AdherenceByMedicine from '@/components/health/AdherenceByMedicine'
 import { isDaily, wasActiveOn } from '@/lib/health/adherence'
+import { localToday, toLocalDate } from '@/lib/local-date'
 
 interface Medicine {
   id: string; name: string; dose: number | null; dose_unit: string | null
@@ -16,7 +17,9 @@ function getDates(days: number): string[] {
   for (let i = 0; i < days; i++) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    dates.push(d.toISOString().slice(0, 10))
+    // Local parts, not toISOString: in BST the UTC date is still yesterday
+    // between midnight and 1am, which would file a dose against the wrong day.
+    dates.push(toLocalDate(d))
   }
   return dates
 }
@@ -96,7 +99,7 @@ export default function PillTrackerPage() {
   }
 
   const dates = getDates(days)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   const formatDate = (d: string) => {
     const dt = new Date(d + 'T12:00:00')
