@@ -19,6 +19,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (body.merchant !== undefined) patch.merchant = body.merchant || null
   if (body.notes !== undefined) patch.notes = body.notes || null
 
+  // Tagging a transaction to a property. Empty string clears it.
+  if (body.property_id !== undefined) {
+    if (!body.property_id) {
+      patch.property_id = null
+    } else {
+      const { data: property } = await supabase
+        .from('money_properties').select('id').eq('id', body.property_id).maybeSingle()
+      if (!property) return NextResponse.json({ error: 'Unknown property.' }, { status: 400 })
+      patch.property_id = body.property_id
+    }
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { CATEGORY_KINDS } from '@/lib/money/spending-types'
+import { PROPERTY_TREATMENTS } from '@/lib/money/property-types'
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
@@ -22,6 +23,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     patch.kind = body.kind
   }
   if (body.sort_order !== undefined) patch.sort_order = Number(body.sort_order) || 0
+  if (body.property_treatment !== undefined) {
+    if (body.property_treatment && !PROPERTY_TREATMENTS.includes(body.property_treatment)) {
+      return NextResponse.json(
+        { error: `property_treatment must be one of: ${PROPERTY_TREATMENTS.join(', ')}` },
+        { status: 400 },
+      )
+    }
+    patch.property_treatment = body.property_treatment || null
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })

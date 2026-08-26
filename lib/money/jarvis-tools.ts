@@ -4,6 +4,8 @@ import { buildNetWorthSeries, latestNetWorth } from './net-worth'
 import { buildAccountResolver } from './match-account'
 import { buildSpendingSummary } from './spending-summary'
 import { applyRules } from './categorise'
+import { buildPropertyPL, taxYearBounds } from './property-pl'
+import type { MoneyProperty } from './property-types'
 import type { MoneyAccount, MoneyBalance } from './types'
 import type { MoneyCategory, MoneyCategoryRule, MoneyTransaction } from './spending-types'
 
@@ -85,6 +87,37 @@ export const MONEY_TOOLS: Anthropic.Tool[] = [
         category_name: { type: 'string', description: 'Category to assign. Must already exist.' },
       },
       required: ['pattern', 'category_name'],
+    },
+  },
+  {
+    name: 'get_property_pl',
+    description:
+      'Property profit and loss for a tax year: rent, allowable expenses, mortgage interest, and ' +
+      'BOTH cash profit and taxable profit, which differ. Also reports transactions not assigned ' +
+      'to a property, since the figures are incomplete without them.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tax_year: { type: 'string', description: 'e.g. "2026/27" or "2026". Defaults to the current year.' },
+        property_code: { type: 'string', description: 'Limit to one property, e.g. 4FLH.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'tag_transaction_property',
+    description:
+      'Assign a transaction to a property by its code. Identify the transaction by a distinctive ' +
+      'part of its description; if more than one matches, the tool returns the candidates rather ' +
+      'than guessing.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        description: { type: 'string', description: 'Part of the transaction description.' },
+        property_code: { type: 'string', description: 'Property code, e.g. 4FLH.' },
+        txn_date: { type: 'string', description: 'YYYY-MM-DD, to narrow it down.' },
+      },
+      required: ['description', 'property_code'],
     },
   },
 ]
@@ -283,6 +316,96 @@ export async function executeMoneyTool(
     }
 
     return `Rule saved: descriptions containing "${pattern}" are now ${matches[0].name}. ${changed} transaction(s) recategorised.`
+  }
+
+  if (name === 'get_property_pl') {
+    const period = taxYearBounds(String(input.tax_year ?? new Date().getFullYear()))
+    const [{ data: props }, { data: cats }, { data: accts }, { data: txns }] = await Promise.all([
+      supabase.from('money_properties').select('*'),
+      supabase.from('money_categories').select('*'),
+      supabase.from('money_accounts').select('*'),
+      supabase.from('money_transactions').select('*')
+        .gte('txn_date', period.from).lte('txn_date', period.to),
+    ])
+
+    let properties = (props ?? []) as MoneyProperty[]
+    if (properties.length === 0) return 'No properties on record.'
+
+    const wanted = String(input.property_code ?? '').trim().toLowerCase()
+    if (wanted) {
+      properties = properties.filter(p => p.code.toLowerCase().includes(wanted))
+      if (properties.length === 0) {
+        return `No property matched "${input.property_code}". On record: ${(props ?? []).map(p => p.code).join(', ')}`
+      }
+    }
+
+    const pl = buildPropertyPL(
+      properties,
+      (txns ?? []) as MoneyTransaction[],
+      (cats ?? []) as MoneyCategory[],
+      (accts ?? []) as MoneyAccount[],
+      period,
+    )
+    if (pl.currencyWarning) return pl.currencyWarning
+
+    return json({
+      tax_year: `${period.from} to ${period.to}`,
+      per_property: pl.perProperty.map(r => ({
+        code: r.code,
+        share_percent: r.sharePercent,
+        rent_received: r.rentReceived,
+        allowable_expenses: r.allowableExpenses,
+        mortgage_interest: r.mortgageInterest,
+        // Both, always labelled. Presenting either as "the" profit would be
+        // wrong for whichever purpose the user actually had.
+        cash_profit: r.cashProfit,
+        taxable_profit_section_24: r.taxableProfit,
+        interest_tax_reducer_20pc: r.interestTaxReducer,
+        reducer_capped_by_profit: r.reducerCapped,
+        unclassified_count: r.unclassifiedCount,
+      })),
+      portfolio_totals: pl.totals,
+      transactions_not_assigned_to_a_property: pl.untaggedCount,
+      value_not_assigned: pl.untaggedValue,
+      important:
+        'Cash profit deducts mortgage interest; taxable profit excludes it under Section 24 and ' +
+        'gives a 20% reducer instead. Report both and say which is which. This is arithmetic, not ' +
+        'tax advice, and the reducer is an upper bound because adjusted total income is unknown.',
+    })
+  }
+
+  if (name === 'tag_transaction_property') {
+    const wantedCode = String(input.property_code ?? '').trim().toLowerCase()
+    const { data: props } = await supabase.from('money_properties').select('id, code')
+    const matches = (props ?? []).filter(p => (p.code as string).toLowerCase().includes(wantedCode))
+    if (matches.length === 0) {
+      return `No property matched "${input.property_code}". On record: ${(props ?? []).map(p => p.code).join(', ')}`
+    }
+    if (matches.length > 1) {
+      return `"${input.property_code}" matches ${matches.map(p => p.code).join(', ')}. Ask which one.`
+    }
+
+    const needle = String(input.description ?? '').toLowerCase().trim()
+    if (!needle) return 'A description fragment is required.'
+
+    let q = supabase.from('money_transactions').select('id, txn_date, description, amount')
+    if (input.txn_date) q = q.eq('txn_date', String(input.txn_date).slice(0, 10))
+    const { data: txns } = await q
+
+    const hits = (txns ?? []).filter(t => (t.description as string).toLowerCase().includes(needle))
+    if (hits.length === 0) return `No transaction matched "${input.description}".`
+    if (hits.length > 1) {
+      return `That matches ${hits.length} transactions: ` +
+        `${hits.slice(0, 8).map(t => `${t.txn_date} ${t.description} ${t.amount}`).join('; ')}. ` +
+        `Narrow it with a date, or say which.`
+    }
+
+    const { error } = await supabase
+      .from('money_transactions')
+      .update({ property_id: matches[0].id })
+      .eq('id', hits[0].id)
+    if (error) return `Could not tag it: ${error.message}`
+    return `Tagged "${hits[0].description}" (${hits[0].txn_date}) to ${matches[0].code}.`
   }
 
   return `Unknown money tool: ${name}`

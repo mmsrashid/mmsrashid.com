@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { CATEGORY_KINDS, DEFAULT_CATEGORIES } from '@/lib/money/spending-types'
+import { PROPERTY_CATEGORY_SEED, PROPERTY_TREATMENTS } from '@/lib/money/property-types'
 
 export async function GET() {
   const supabase = await createClient()
@@ -25,10 +26,43 @@ export async function GET() {
       .insert(seeded)
       .select()
     if (seedErr) return NextResponse.json({ error: seedErr.message }, { status: 500 })
-    return NextResponse.json(created ?? [])
+    return NextResponse.json(await withPropertySeed(supabase, user.id, created ?? []))
   }
 
-  return NextResponse.json(data ?? [])
+  return NextResponse.json(await withPropertySeed(supabase, user.id, data ?? []))
+}
+
+type CategoryRow = { id: string; name: string; property_treatment?: string | null }
+
+/**
+ * Adds any missing property categories.
+ *
+ * Separate from the initial seed because the starter set was created before
+ * property support existed — a user who already has categories would otherwise
+ * never receive the property ones, and every property transaction would land as
+ * unclassified with no category available to fix it.
+ */
+async function withPropertySeed(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  existing: CategoryRow[],
+): Promise<CategoryRow[]> {
+  const have = new Set(existing.map(c => c.name.toLowerCase()))
+  const missing = PROPERTY_CATEGORY_SEED.filter(c => !have.has(c.name.toLowerCase()))
+  if (missing.length === 0) return existing
+
+  const { data: added } = await supabase
+    .from('money_categories')
+    .insert(missing.map((c, i) => ({
+      user_id: userId,
+      name: c.name,
+      kind: c.kind,
+      property_treatment: c.property_treatment,
+      sort_order: 100 + i,
+    })))
+    .select()
+
+  return [...existing, ...((added ?? []) as CategoryRow[])]
 }
 
 export async function POST(req: Request) {
@@ -45,7 +79,15 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase
     .from('money_categories')
-    .insert({ user_id: user.id, name, kind: body.kind, sort_order: Number(body.sort_order) || 0 })
+    .insert({
+      user_id: user.id,
+      name,
+      kind: body.kind,
+      sort_order: Number(body.sort_order) || 0,
+      property_treatment: PROPERTY_TREATMENTS.includes(body.property_treatment)
+        ? body.property_treatment
+        : null,
+    })
     .select()
     .single()
 
