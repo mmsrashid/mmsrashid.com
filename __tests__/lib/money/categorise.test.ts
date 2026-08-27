@@ -88,4 +88,40 @@ describe('applyRules', () => {
   it('handles an empty rule set', () => {
     expect(applyRules([txn('ANYTHING')], [])[0].category_id).toBeNull()
   })
+
+  it('tags a property when the matching rule carries one', () => {
+    // One rule sets both category and property, which is what makes monthly
+    // rental income self-filing instead of hand-tagged.
+    const r = applyRules(
+      [txn('RENT 4FLH JUNE')],
+      [rule({ pattern: '4FLH', category_id: 'rent-received', property_id: 'prop-4flh' })],
+    )
+    expect(r[0]).toMatchObject({
+      category_id: 'rent-received', category_source: 'rule', property_id: 'prop-4flh',
+    })
+  })
+
+  it('leaves the property null when the rule has none', () => {
+    const r = applyRules([txn('TESCO')], [rule({ pattern: 'tesco', category_id: 'groceries' })])
+    expect(r[0].property_id).toBeNull()
+  })
+
+  it('never replaces a property tag that is already set', () => {
+    // There is no property_source column to mark a hand-made choice, so an
+    // existing tag is treated as authoritative. Overwriting it would move rental
+    // income onto the wrong asset with nothing to signal it happened.
+    const r = applyRules(
+      [{ ...txn('RENT 4FLH'), property_id: 'chosen-by-hand' }],
+      [rule({ pattern: '4FLH', category_id: 'rent-received', property_id: 'prop-4flh' })],
+    )
+    expect(r[0].property_id).toBe('chosen-by-hand')
+  })
+
+  it('keeps the property tag on a manually categorised transaction', () => {
+    const r = applyRules(
+      [{ ...txn('RENT 4FLH', { category_id: 'x', category_source: 'manual' }), property_id: 'p' }],
+      [rule({ pattern: '4FLH', category_id: 'rent-received', property_id: 'other' })],
+    )
+    expect(r[0]).toMatchObject({ category_id: 'x', category_source: 'manual', property_id: 'p' })
+  })
 })

@@ -31,6 +31,8 @@ export interface MoneyTransaction {
   external_id: string | null
   dedupe_key: string
   notes: string | null
+  /** The rental property this belongs to, when tagged. */
+  property_id?: string | null
   created_at: string
 }
 
@@ -40,6 +42,8 @@ export interface MoneyCategoryRule {
   match_type: MatchType
   pattern: string
   category_id: string
+  /** Optionally also tags the transaction to a property. */
+  property_id?: string | null
   priority: number
   created_at: string
 }

@@ -230,6 +230,7 @@ export async function POST(req: Request) {
             ...x.pt,
             category_id: null as string | null,
             category_source: null as never,
+            property_id: null as string | null,
           })),
           (rules ?? []) as MoneyCategoryRule[],
         )
@@ -265,6 +266,7 @@ export async function POST(req: Request) {
           amount: x.pt.amount,
           category_id: categorised[i].category_id,
           category_source: categorised[i].category_source,
+          property_id: categorised[i].property_id ?? null,
           document_id: doc.id,
           external_id: x.pt.external_id,
           dedupe_key: x.key,

@@ -22,6 +22,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     patch.match_type = body.match_type
   }
   if (body.category_id !== undefined) patch.category_id = body.category_id
+  if (body.property_id !== undefined) patch.property_id = body.property_id || null
   if (body.priority !== undefined) patch.priority = Number(body.priority) || 100
 
   // Validate the regex against whatever the row will actually end up with, not

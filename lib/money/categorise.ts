@@ -4,6 +4,7 @@ export interface Categorisable {
   description: string
   category_id: string | null
   category_source: CategorySource | null
+  property_id?: string | null
 }
 
 function matches(rule: MoneyCategoryRule, description: string): boolean {
@@ -41,6 +42,15 @@ export function applyRules<T extends Categorisable>(
     const hit = ordered.find(r => matches(r, txn.description))
     if (!hit) return { ...txn, category_id: null, category_source: null }
 
-    return { ...txn, category_id: hit.category_id, category_source: 'rule' as const }
+    return {
+      ...txn,
+      category_id: hit.category_id,
+      category_source: 'rule' as const,
+      // A rule fills an empty property tag but never replaces one already set.
+      // There is no `property_source` column to mark a hand-made choice, so the
+      // existing value is treated as authoritative — overwriting it would move
+      // rental income onto the wrong asset with nothing to signal it happened.
+      property_id: txn.property_id ?? hit.property_id ?? null,
+    }
   })
 }

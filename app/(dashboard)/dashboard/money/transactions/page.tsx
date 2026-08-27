@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
+import type { MoneyProperty } from '@/lib/money/property-types'
 import type { MoneyAccount } from '@/lib/money/types'
 
 const money = (n: number) =>
@@ -10,6 +11,7 @@ export default function TransactionsPage() {
   const [txns, setTxns] = useState<MoneyTransaction[]>([])
   const [cats, setCats] = useState<MoneyCategory[]>([])
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
+  const [properties, setProperties] = useState<MoneyProperty[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -22,10 +24,12 @@ export default function TransactionsPage() {
     fetch('/api/money/transactions').then(r => r.json()),
     fetch('/api/money/categories').then(r => r.json()),
     fetch('/api/money/accounts').then(r => r.json()),
-  ]).then(([t, c, a]) => {
+    fetch('/api/money/properties').then(r => r.json()).catch(() => []),
+  ]).then(([t, c, a, p]) => {
     setTxns(Array.isArray(t) ? t : [])
     setCats(Array.isArray(c) ? c : [])
     setAccounts(Array.isArray(a) ? a : [])
+    setProperties(Array.isArray(p) ? p : [])
     setLoading(false)
   }), [])
 
@@ -36,6 +40,17 @@ export default function TransactionsPage() {
     const res = await fetch(`/api/money/transactions/${t.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category_id: categoryId || null }),
+    })
+    const d = await res.json()
+    if (!res.ok) return setError(d.error || 'Could not update.')
+    setTxns(prev => prev.map(x => (x.id === t.id ? d : x)))
+  }
+
+  async function setProperty(t: MoneyTransaction, propertyId: string) {
+    setError('')
+    const res = await fetch(`/api/money/transactions/${t.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ property_id: propertyId || null }),
     })
     const d = await res.json()
     if (!res.ok) return setError(d.error || 'Could not update.')
@@ -119,7 +134,7 @@ export default function TransactionsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {['Date', 'Description', 'Account', 'Amount', 'Category', ''].map(h => (
+              {['Date', 'Description', 'Account', 'Amount', 'Category', ...(properties.length ? ['Property'] : []), ''].map(h => (
                 <th key={h} style={{
                   textAlign: h === 'Amount' ? 'right' : 'left', padding: '8px 12px',
                   background: '#fafafa', color: '#9ca3af', fontWeight: 600, fontSize: 11,
@@ -163,6 +178,20 @@ export default function TransactionsPage() {
                     </span>
                   )}
                 </td>
+                {properties.length > 0 && (
+                  <td style={cell}>
+                    <select
+                      value={(t as MoneyTransaction & { property_id?: string | null }).property_id ?? ''}
+                      onChange={e => setProperty(t, e.target.value)}
+                      style={{ ...input, padding: '3px 6px', fontSize: 11 }}
+                    >
+                      <option value="">—</option>
+                      {properties.map(p => (
+                        <option key={p.id} value={p.id}>{p.code}</option>
+                      ))}
+                    </select>
+                  </td>
+                )}
                 <td style={cell}>
                   <button onClick={() => createRule(t)}
                     title="Apply this category to similar descriptions from now on"

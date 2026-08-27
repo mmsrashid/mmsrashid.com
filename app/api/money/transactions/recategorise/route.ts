@@ -30,10 +30,18 @@ export async function POST(req: Request) {
 
   let changed = 0
   for (let i = 0; i < after.length; i++) {
-    if (after[i].category_id === before[i].category_id) continue
+    // Compare the property tag too: adding a property rule for transactions
+    // that are already categorised would otherwise change nothing at all.
+    const sameCategory = after[i].category_id === before[i].category_id
+    const sameProperty = (after[i].property_id ?? null) === (before[i].property_id ?? null)
+    if (sameCategory && sameProperty) continue
     const { error } = await supabase
       .from('money_transactions')
-      .update({ category_id: after[i].category_id, category_source: after[i].category_source })
+      .update({
+        category_id: after[i].category_id,
+        category_source: after[i].category_source,
+        property_id: after[i].property_id ?? null,
+      })
       .eq('id', before[i].id)
     if (!error) changed++
   }

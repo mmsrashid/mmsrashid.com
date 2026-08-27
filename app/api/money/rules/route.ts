@@ -39,6 +39,9 @@ export async function POST(req: Request) {
     .insert({
       user_id: user.id, pattern, match_type: body.match_type,
       category_id: body.category_id, priority: Number(body.priority) || 100,
+      // One rule can set both category and property. The four property codes are
+      // distinctive strings, so matching on them is unusually reliable.
+      property_id: body.property_id || null,
     })
     .select()
     .single()
