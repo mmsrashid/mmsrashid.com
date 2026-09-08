@@ -1,5 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import CategoryPicker from '@/components/money/CategoryPicker'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
 import type { MoneyProperty } from '@/lib/money/property-types'
 import type { MoneyAccount } from '@/lib/money/types'
@@ -210,17 +211,11 @@ export default function TransactionsPage() {
                   {money(Number(t.amount))}
                 </td>
                 <td style={cell}>
-                  <select
+                  <CategoryPicker
+                    categories={cats}
                     value={t.category_id ?? ''}
-                    onChange={e => setCategory(t, e.target.value)}
-                    style={{
-                      ...input, padding: '3px 6px', fontSize: 11,
-                      borderColor: t.category_id ? '#d1d5db' : '#fbbf24',
-                    }}
-                  >
-                    <option value="">— uncategorised —</option>
-                    {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                    onChange={id => setCategory(t, id)}
+                  />
                   {t.category_source && (
                     <span style={{ fontSize: 9, color: '#9ca3af', marginLeft: 4 }}>
                       {t.category_source}
