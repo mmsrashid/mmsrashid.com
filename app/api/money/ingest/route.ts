@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { extractBalances, isSupportedMoneyMime } from '@/lib/money/extract'
-import { buildAccountResolver } from '@/lib/money/match-account'
+import { buildAccountResolver, resolveAccountByBankDetails } from '@/lib/money/match-account'
 import { parseBalanceCsv } from '@/lib/money/parse-csv'
 import { parseTransactionCsv } from '@/lib/money/parse-transaction-csv'
 import { extractTransactions } from '@/lib/money/extract-transactions'
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 
   const { data: accounts } = await supabase
     .from('money_accounts')
-    .select('id, name, institution')
+    .select('id, name, institution, sort_code, account_number')
   const resolve = buildAccountResolver(accounts ?? [])
 
   const bytes = Buffer.from(await file.arrayBuffer())
@@ -190,11 +190,19 @@ export async function POST(req: Request) {
     let parsed: ParsedTransaction[] = []
     let lowConfidence: ParsedTransaction[] = []
     let warning: string | null = null
+    let hintedAccountId: string | null = null
 
     if (isCsv) {
       const r = parseTransactionCsv(bytes.toString('utf8'))
       parsed = r.rows
       if (r.errors.length && r.rows.length === 0) warning = r.errors[0]
+
+      // The file may name its own account — Barclays prints the sort code and
+      // account number in every row. That is far more reliable than guessing.
+      for (const hint of r.accountHints ?? []) {
+        const hit = resolveAccountByBankDetails(hint, accounts ?? [])
+        if (hit) { hintedAccountId = hit.id; break }
+      }
     } else {
       try {
         const r = await extractTransactions({
@@ -216,22 +224,24 @@ export async function POST(req: Request) {
         filed: 0, skipped_duplicates: 0, low_confidence: lowConfidence.length,
         unresolved_account: false, ai_categorised: 0, proposed_rules: [], warning,
       }
-    } else if (!targetAccountId) {
+    } else if (!(hintedAccountId ?? targetAccountId)) {
       txnResult = {
         filed: 0, skipped_duplicates: 0, low_confidence: lowConfidence.length,
         unresolved_account: true, ai_categorised: 0, proposed_rules: [],
         warning: 'Found transactions but could not tell which account they belong to. Say which account and re-upload.',
       }
     } else {
+      // A file naming its own account beats anything inferred.
+      const accountId = hintedAccountId ?? targetAccountId!
       // A statement is authoritative for its own window, so keys come from the
       // batch alone. Re-importing regenerates the same keys, so a row already
       // stored is recognisable by its key.
-      const keys = buildImportKeys(targetAccountId, parsed)
+      const keys = buildImportKeys(accountId, parsed)
 
       const { data: existingKeys } = await supabase
         .from('money_transactions')
         .select('dedupe_key')
-        .eq('account_id', targetAccountId)
+        .eq('account_id', accountId)
       const stored = new Set((existingKeys ?? []).map(r => r.dedupe_key as string))
 
       // Only rows not already stored are touched at all.
@@ -273,7 +283,7 @@ export async function POST(req: Request) {
         // optional enrichment step was slow. The data lands first, always.
         const payload = fresh.map((x, i) => ({
           user_id: user.id,
-          account_id: targetAccountId,
+          account_id: accountId,
           txn_date: x.pt.txn_date,
           description: x.pt.description,
           amount: x.pt.amount,

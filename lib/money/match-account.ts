@@ -30,6 +30,36 @@ const near = (a: string, b: string) =>
   a === b ||
   (a.length >= 5 && b.length >= 5 && (editDistance(a, b) <= 1 || transposed(a, b)))
 
+/** Digits only, so "20-29-41" and "202941" compare equal. */
+const digits = (s: string) => (s ?? '').replace(/[^0-9]/g, '')
+
+/**
+ * Resolves an account from an identifier printed in a statement file — Barclays
+ * puts "20-29-41 40261467" in an Account column.
+ *
+ * Matched on digits so formatting differences do not matter, and only on a
+ * sort-code-and-number pair or a full account number: a bare six digits could
+ * coincide with something else, and filing a whole statement against the wrong
+ * account is not a mistake worth risking to save one question.
+ */
+export function resolveAccountByBankDetails(
+  hint: string,
+  accounts: { id: string; name: string; sort_code?: string | null; account_number?: string | null }[],
+): { id: string; name: string } | null {
+  const h = digits(hint)
+  if (h.length < 8) return null
+
+  const hits = accounts.filter(a => {
+    const num = digits(a.account_number ?? '')
+    const sort = digits(a.sort_code ?? '')
+    if (num.length >= 8 && h.includes(num)) return true
+    if (num.length >= 6 && sort.length === 6 && h.includes(sort) && h.includes(num)) return true
+    return false
+  })
+
+  return hits.length === 1 ? { id: hits[0].id, name: hits[0].name } : null
+}
+
 /**
  * Resolves a name read off a statement to an account on record.
  *

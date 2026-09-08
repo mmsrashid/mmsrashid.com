@@ -1,5 +1,8 @@
 import { parseTransactionCsv } from '@/lib/money/parse-transaction-csv'
 
+/** Newline, kept in a constant so shell heredocs cannot mangle the escape. */
+const SEP = String.fromCharCode(10)
+
 describe('parseTransactionCsv', () => {
   it('parses a single signed amount column', () => {
     const r = parseTransactionCsv('Date,Description,Amount\n2026-02-04,PRET,-3.20')
@@ -172,6 +175,30 @@ describe('parseTransactionCsv', () => {
         '07/08/2026,Y,25.00,CREDIT',
       ].join('\n'))
       expect(r.rows.map(x => x.amount)).toEqual([-25, 25])
+    })
+  })
+
+  describe('Barclays export', () => {
+    const HEADER = 'Number,Date,Account,Amount,Subcategory,Memo'
+
+    it('parses a Barclays row using Memo as the description', () => {
+      const r = parseTransactionCsv([
+        HEADER,
+        '1,03/03/2025,"20-29-41 40261467",-775.00,Bills,"MORTGAGE PAYMENT 4FLH"',
+      ].join(SEP))
+      expect(r.errors).toEqual([])
+      expect(r.rows[0]).toMatchObject({
+        txn_date: '2025-03-03', description: 'MORTGAGE PAYMENT 4FLH', amount: -775,
+      })
+    })
+
+    it('reports the account identifiers named in the file', () => {
+      const r = parseTransactionCsv([
+        HEADER,
+        '1,03/03/2025,"20-29-41 40261467",-775.00,Bills,MORTGAGE',
+        '2,04/03/2025,"20-29-41 40261467",294.46,Other,RENT',
+      ].join(SEP))
+      expect(r.accountHints).toEqual(['20-29-41 40261467'])
     })
   })
 

@@ -275,9 +275,24 @@ export default function MoneyAccountsPage() {
                     // that matters.
                     const gbp = (n: number) =>
                       n.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })
+                    const mine = txns.filter(t => t.account_id === a.id)
+                    // With no transactions imported at all, every interval looks
+                    // like unrecorded money. That is not a discrepancy, it is an
+                    // empty account — and 17 identical warnings drown out the
+                    // real ones. Say it once, plainly.
+                    if (mine.length === 0) {
+                      const snaps = balances.filter(b => b.account_id === a.id).length
+                      if (snaps < 2) return null
+                      return (
+                        <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af' }}>
+                          {snaps} balance snapshots but no transactions imported for this account
+                          yet, so nothing can be reconciled.
+                        </div>
+                      )
+                    }
                     const bad = reconcileAccount(
                       balances.filter(b => b.account_id === a.id),
-                      txns.filter(t => t.account_id === a.id),
+                      mine,
                     ).filter(i => !i.ok)
                     if (bad.length === 0) return null
                     return (

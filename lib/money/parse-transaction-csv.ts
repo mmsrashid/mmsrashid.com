@@ -3,6 +3,11 @@ import type { ParsedTransaction } from './spending-types'
 export interface TransactionCsvResult {
   rows: ParsedTransaction[]
   errors: string[]
+  /**
+   * Any account identifiers named in the file — a sort code and account number,
+   * for instance. Lets the importer work out which account the feed belongs to.
+   */
+  accountHints?: string[]
 }
 
 /** Minimal RFC-4180 splitter: quoted fields and escaped quotes. */
@@ -69,6 +74,8 @@ const ALIASES: Record<string, string[]> = {
     // Starling and Monzo name the other side of the transaction rather than
     // calling it a description.
     'counter party', 'counterparty', 'name', 'paid to', 'to from',
+    // Barclays calls it the memo.
+    'memo', 'transaction description',
   ],
   amount: ['amount', 'value', 'transaction amount'],
   debit: ['debit', 'paid out', 'money out', 'withdrawal', 'withdrawn'],
@@ -86,13 +93,17 @@ const ALIASES: Record<string, string[]> = {
   balance: ['balance', 'running balance', 'closing balance'],
   // Recognised so it is not mistaken for anything; the bank's own guess is not
   // imported, since this app's categories are the user's own.
-  bank_category: ['spending category', 'category'],
+  bank_category: ['spending category', 'category', 'subcategory'],
+  // Barclays puts "20-29-41 40261467" here — the sort code and account number of
+  // the account the statement belongs to. Used to resolve which account a feed
+  // is for, which is otherwise unknowable from the file.
+  account_hint: ['account', 'account name', 'account number'],
 }
 
 export function parseTransactionCsv(text: string): TransactionCsvResult {
   const errors: string[] = []
   const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
-  if (lines.length < 2) return { rows: [], errors: ['The file has no data rows.'] }
+  if (lines.length < 2) return { rows: [], errors: ['The file has no data rows.'], accountHints: [] }
 
   const header = splitCsvLine(lines[0]).map(h => h
     .toLowerCase()
@@ -112,15 +123,17 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
   const iType = col('type')
   const iTxnId = col('transaction_id')
   const iPayRef = col('payment_reference')
+  const iAccountHint = col('account_hint')
 
   if (iDate === -1) errors.push(`Could not find a date column. Found: ${header.join(', ')}`)
   if (iDesc === -1) errors.push(`Could not find a description column. Found: ${header.join(', ')}`)
   if (iAmount === -1 && iDebit === -1 && iCredit === -1) {
     errors.push(`Could not find an amount, debit or credit column. Found: ${header.join(', ')}`)
   }
-  if (errors.length) return { rows: [], errors }
+  if (errors.length) return { rows: [], errors, accountHints: [] }
 
   const rows: ParsedTransaction[] = []
+  const accountHints = new Set<string>()
 
   lines.slice(1).forEach((line, n) => {
     const cells = splitCsvLine(line)
@@ -170,6 +183,11 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
     // transactions. Silently skipping is right; erroring would be noise.
     if (amount === 0) return
 
+    if (iAccountHint !== -1) {
+      const hint = (cells[iAccountHint] ?? '').trim()
+      if (hint) accountHints.add(hint)
+    }
+
     rows.push({
       txn_date,
       description,
@@ -178,5 +196,5 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
     })
   })
 
-  return { rows, errors }
+  return { rows, errors, accountHints: [...accountHints] }
 }
