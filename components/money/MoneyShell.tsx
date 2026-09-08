@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import PendingReview from './PendingReview'
-import type { ExtractedBalance } from '@/lib/money/types'
+import type { ExtractedBalance, MoneyAccount } from '@/lib/money/types'
 
 const TABS = [
   { label: 'Overview', icon: '📊', href: '/dashboard/money/overview' },
@@ -25,6 +25,12 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
   const [dragging, setDragging] = useState(false)
   const [pending, setPending] = useState<ExtractedBalance[]>([])
   const [pendingDocId, setPendingDocId] = useState<string | null>(null)
+  // Which account an uploaded statement belongs to. A file cannot always say —
+  // a Starling feed names no account at all — and without a way to choose,
+  // "I could not tell which account" was a dead end: the only advice was to
+  // re-upload, which failed identically.
+  const [accounts, setAccounts] = useState<MoneyAccount[]>([])
+  const [uploadAccountId, setUploadAccountId] = useState('')
   // Bumping this remounts the tab subtree so its useEffect refetches.
   const [dataVersion, setDataVersion] = useState(0)
 
@@ -37,6 +43,18 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, uploading, pending.length])
 
+  useEffect(() => {
+    fetch('/api/money/accounts')
+      .then(r => r.json())
+      .then(d => {
+        const live = Array.isArray(d) ? d.filter((a: MoneyAccount) => a.status === 'active') : []
+        setAccounts(live)
+        // With exactly one account there is nothing to choose.
+        if (live.length === 1) setUploadAccountId(live[0].id)
+      })
+      .catch(() => setAccounts([]))
+  }, [dataVersion])
+
   const say = (text: string) => setMessages(m => [...m, { role: 'ai', text }])
 
   const upload = useCallback(async (file: File) => {
@@ -46,6 +64,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
     try {
       const fd = new FormData()
       fd.append('file', file)
+      if (uploadAccountId) fd.append('account_id', uploadAccountId)
       const res = await fetch('/api/money/ingest', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok) { say(data.error || 'I could not read that file.'); return }
@@ -62,7 +81,13 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         if (tx.ai_categorised) bits.push(`${tx.ai_categorised} categorised by me — worth checking in Transactions.`)
         if (tx.left_uncategorised) bits.push(`${tx.left_uncategorised} filed but not yet categorised — they are safe, just uncategorised.`)
         if (tx.low_confidence) bits.push(`${tx.low_confidence} transaction line(s) were unclear and not filed.`)
-        if (tx.unresolved_account) bits.push('I could not tell which account those transactions belong to.')
+        if (tx.unresolved_account) {
+          bits.push(
+            accounts.length > 1
+              ? 'I could not tell which account those transactions belong to. Pick one in "File uploads into" above and drop the file again.'
+              : 'I could not tell which account those transactions belong to. Add the account first, then re-upload.',
+          )
+        }
         if (tx.warning) bits.push(tx.warning)
         // Offering the rules is what turns a one-off AI guess into a permanent,
         // deterministic decision the user controls.
@@ -80,7 +105,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
     } finally {
       setUploading(false)
     }
-  }, [uploading, router])
+  }, [uploading, router, uploadAccountId])
 
   async function send() {
     const text = input.trim()
@@ -147,7 +172,26 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
             <div style={{ fontSize: 11, color: '#9ca3af' }}>{uploading ? 'Reading…' : 'Thinking…'}</div>
           )}
         </div>
-        <div style={{ padding: 10, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6 }}>
+        {accounts.length > 1 && (
+          <div style={{ padding: '8px 10px 0', borderTop: '1px solid #e5e7eb' }}>
+            <label style={{ fontSize: 10, color: '#6b7280', display: 'block', marginBottom: 3 }}>
+              File uploads into
+            </label>
+            <select
+              value={uploadAccountId}
+              onChange={e => setUploadAccountId(e.target.value)}
+              style={{
+                width: '100%', border: '1px solid #d1d5db', borderRadius: 8,
+                padding: '5px 8px', fontSize: 11,
+                borderColor: uploadAccountId ? '#d1d5db' : '#fbbf24',
+              }}
+            >
+              <option value="">— work it out from the file —</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ padding: 10, borderTop: accounts.length > 1 ? 'none' : '1px solid #e5e7eb', display: 'flex', gap: 6 }}>
           <button onClick={() => fileInput.current?.click()} title="Attach a statement, screenshot or CSV"
             style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, padding: '6px 9px', cursor: 'pointer' }}>
             📎

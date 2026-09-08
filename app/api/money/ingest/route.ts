@@ -42,6 +42,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'That file is over 20MB.' }, { status: 413 })
   }
 
+  // An explicit choice from the user outranks anything inferred from the file.
+  const chosenAccountId = (() => {
+    const v = form.get('account_id')
+    return typeof v === 'string' && v.trim() ? v.trim() : null
+  })()
+
   const isCsv = /\.csv$/i.test(file.name) || file.type === 'text/csv'
   if (!isCsv && !isSupportedMoneyMime(file.type)) {
     return NextResponse.json(
@@ -152,14 +158,18 @@ export async function POST(req: Request) {
   const pending: ExtractedBalance[] = []
 
   for (const r of resolved) {
-    const ok = r.confidence === 'high' && r.account_id && r.as_of && r.as_of <= today
+    // An explicit choice also rescues a balance whose account name did not
+    // match — common with an app screenshot, where the name on screen rarely
+    // matches what the account is called here.
+    const effectiveAccountId = r.account_id ?? chosenAccountId
+    const ok = r.confidence === 'high' && effectiveAccountId && r.as_of && r.as_of <= today
     if (!ok) { pending.push(r); continue }
 
     const { data, error } = await supabase
       .from('money_balances')
       .upsert({
         user_id: user.id,
-        account_id: r.account_id,
+        account_id: effectiveAccountId,
         as_of: r.as_of,
         balance: r.balance,
         source: isCsv ? 'import' : 'document',
@@ -224,7 +234,7 @@ export async function POST(req: Request) {
         filed: 0, skipped_duplicates: 0, low_confidence: lowConfidence.length,
         unresolved_account: false, ai_categorised: 0, proposed_rules: [], warning,
       }
-    } else if (!(hintedAccountId ?? targetAccountId)) {
+    } else if (!(chosenAccountId ?? hintedAccountId ?? targetAccountId)) {
       txnResult = {
         filed: 0, skipped_duplicates: 0, low_confidence: lowConfidence.length,
         unresolved_account: true, ai_categorised: 0, proposed_rules: [],
@@ -232,7 +242,7 @@ export async function POST(req: Request) {
       }
     } else {
       // A file naming its own account beats anything inferred.
-      const accountId = hintedAccountId ?? targetAccountId!
+      const accountId = chosenAccountId ?? hintedAccountId ?? targetAccountId!
       // A statement is authoritative for its own window, so keys come from the
       // batch alone. Re-importing regenerates the same keys, so a row already
       // stored is recognisable by its key.
