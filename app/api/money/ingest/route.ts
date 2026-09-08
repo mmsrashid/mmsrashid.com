@@ -49,24 +49,39 @@ export async function POST(req: Request) {
   let docKind: 'csv' | 'statement' | 'screenshot'
 
   if (isCsv) {
-    const parsed = parseBalanceCsv(bytes.toString('utf8'))
-    if (parsed.rows.length === 0) {
-      return NextResponse.json(
-        { error: parsed.errors[0] ?? 'Nothing readable in that CSV.' },
-        { status: 400 },
-      )
-    }
+    const text = bytes.toString('utf8')
+    const parsed = parseBalanceCsv(text)
     docKind = 'csv'
-    // CSV values are typed, not inferred, so the only uncertainty is which
-    // account a name refers to.
-    extracted = parsed.rows.map(r => ({
-      account_name: r.account_name,
-      balance: r.balance,
-      as_of: r.as_of,
-      currency: null,
-      confidence: 'high',
-      account_id: null,
-    }))
+
+    if (parsed.rows.length === 0) {
+      // A transaction feed has no account or balance columns, so the balance
+      // parser rightly finds nothing. Refusing the file here meant a Starling
+      // export was rejected before the transaction parser ever saw it.
+      const asTransactions = parseTransactionCsv(text)
+      if (asTransactions.rows.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              'I could not read that as either a balance list or a transaction feed. ' +
+              `Balance parser said: ${parsed.errors[0] ?? 'nothing found'}. ` +
+              `Transaction parser said: ${asTransactions.errors[0] ?? 'nothing found'}.`,
+          },
+          { status: 400 },
+        )
+      }
+      extracted = []
+    } else {
+      // CSV values are typed, not inferred, so the only uncertainty is which
+      // account a name refers to.
+      extracted = parsed.rows.map(r => ({
+        account_name: r.account_name,
+        balance: r.balance,
+        as_of: r.as_of,
+        currency: null,
+        confidence: 'high',
+        account_id: null,
+      }))
+    }
   } else {
     docKind = file.type === 'application/pdf' ? 'statement' : 'screenshot'
     try {

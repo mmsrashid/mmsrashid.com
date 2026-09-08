@@ -64,14 +64,29 @@ function toAmount(raw: string): { value: number; bracketed: boolean } | null {
 
 const ALIASES: Record<string, string[]> = {
   date: ['date', 'transaction date', 'txn date', 'posted', 'value date'],
-  description: ['description', 'details', 'narrative', 'reference description', 'merchant', 'payee'],
+  description: [
+    'description', 'details', 'narrative', 'reference description', 'merchant', 'payee',
+    // Starling and Monzo name the other side of the transaction rather than
+    // calling it a description.
+    'counter party', 'counterparty', 'name', 'paid to', 'to from',
+  ],
   amount: ['amount', 'value', 'transaction amount'],
   debit: ['debit', 'paid out', 'money out', 'withdrawal', 'withdrawn'],
   credit: ['credit', 'paid in', 'money in', 'deposit'],
   type: ['type', 'dr/cr', 'debit/credit'],
-  reference: ['reference', 'transaction id', 'transaction reference', 'id'],
+  // A transaction IDENTIFIER only. A bare "reference" column is deliberately
+  // excluded: in a Starling export that holds the payment reference, which is
+  // often the same text every month ("RENT"), and using it as an identity would
+  // collapse twelve months of rent into a single transaction.
+  transaction_id: ['transaction id', 'transaction reference', 'transaction uid', 'id'],
+  // A free-text payment reference. Appended to the description because it often
+  // carries the detail that makes a rule match — a property code, for instance.
+  payment_reference: ['reference', 'payment reference', 'reference number'],
   // Recognised only so it is never mistaken for the amount.
   balance: ['balance', 'running balance', 'closing balance'],
+  // Recognised so it is not mistaken for anything; the bank's own guess is not
+  // imported, since this app's categories are the user's own.
+  bank_category: ['spending category', 'category'],
 }
 
 export function parseTransactionCsv(text: string): TransactionCsvResult {
@@ -79,7 +94,14 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
   const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
   if (lines.length < 2) return { rows: [], errors: ['The file has no data rows.'] }
 
-  const header = splitCsvLine(lines[0]).map(h => h.toLowerCase().replace(/[_-]+/g, ' ').trim())
+  const header = splitCsvLine(lines[0]).map(h => h
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    // Banks suffix the currency: "amount (gbp)", "balance (GBP)". Without
+    // stripping it, the amount column is invisible and the whole file is refused.
+    .replace(/\s*\((?:[a-z]{3}|[£$€])\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim())
   const col = (key: string) => header.findIndex(h => ALIASES[key].includes(h))
 
   const iDate = col('date')
@@ -88,7 +110,8 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
   const iDebit = col('debit')
   const iCredit = col('credit')
   const iType = col('type')
-  const iRef = col('reference')
+  const iTxnId = col('transaction_id')
+  const iPayRef = col('payment_reference')
 
   if (iDate === -1) errors.push(`Could not find a date column. Found: ${header.join(', ')}`)
   if (iDesc === -1) errors.push(`Could not find a description column. Found: ${header.join(', ')}`)
@@ -106,7 +129,13 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
     const txn_date = toIsoDate(cells[iDate] ?? '')
     if (!txn_date) { errors.push(`Row ${lineNo}: unreadable date "${cells[iDate] ?? ''}".`); return }
 
-    const description = (cells[iDesc] ?? '').trim()
+    let description = (cells[iDesc] ?? '').trim()
+    // Fold in the payment reference when it adds something: it frequently holds
+    // the detail a rule needs to match on, such as a property code.
+    const payRef = iPayRef !== -1 ? (cells[iPayRef] ?? '').trim() : ''
+    if (payRef && !description.toLowerCase().includes(payRef.toLowerCase())) {
+      description = description ? `${description} ${payRef}` : payRef
+    }
     if (!description) { errors.push(`Row ${lineNo}: no description.`); return }
 
     let amount: number | null = null
@@ -126,11 +155,13 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
       amount = a.bracketed ? -Math.abs(a.value) : a.value
 
       // A DR/CR column overrides the sign, since such files usually print
-      // magnitudes only.
-      const type = (cells[iType] ?? '').trim().toUpperCase()
+      // magnitudes only. Matched against exact tokens rather than a prefix: a
+      // Starling "type" column holds values like FASTER_PAYMENT and CARD_PAYMENT,
+      // and a prefix test would eventually mangle the sign of a real transaction.
+      const type = (cells[iType] ?? '').trim().toUpperCase().replace(/[^A-Z/]/g, '')
       if (iType !== -1 && type) {
-        if (type.startsWith('DR') || type === 'D') amount = -Math.abs(amount)
-        if (type.startsWith('CR') || type === 'C') amount = Math.abs(amount)
+        if (['DR', 'D', 'DEBIT'].includes(type)) amount = -Math.abs(amount)
+        if (['CR', 'C', 'CREDIT'].includes(type)) amount = Math.abs(amount)
       }
     }
 
@@ -143,7 +174,7 @@ export function parseTransactionCsv(text: string): TransactionCsvResult {
       txn_date,
       description,
       amount,
-      external_id: iRef !== -1 ? (cells[iRef] || '').trim() || null : null,
+      external_id: iTxnId !== -1 ? (cells[iTxnId] || '').trim() || null : null,
     })
   })
 
