@@ -16,6 +16,26 @@ export const LIABILITY_KINDS: ReadonlySet<string> = new Set<AccountKind>([
 
 export const isLiability = (kind: string) => LIABILITY_KINDS.has(kind)
 
+/**
+ * Shows only the last four digits.
+ *
+ * Masked by default because these pages get screenshotted and shared — the
+ * number is available on demand, but should not leak from a casual screen grab.
+ */
+export function maskAccountNumber(value: string | null | undefined): string {
+  const digits = (value ?? '').replace(/\s+/g, '')
+  if (!digits) return ''
+  if (digits.length <= 4) return digits
+  return `••••${digits.slice(-4)}`
+}
+
+/** Formats a UK sort code as 12-34-56 when it looks like six digits. */
+export function formatSortCode(value: string | null | undefined): string {
+  const raw = (value ?? '').replace(/[^0-9]/g, '')
+  if (raw.length !== 6) return (value ?? '').trim()
+  return `${raw.slice(0, 2)}-${raw.slice(2, 4)}-${raw.slice(4, 6)}`
+}
+
 export const ACCOUNT_STATUSES = ['active', 'closed'] as const
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number]
 
@@ -43,9 +63,18 @@ export interface MoneyAccount {
   id: string
   user_id: string
   name: string
+  /** Bank or provider name. */
   institution: string | null
   kind: AccountKind
   currency: string
+  /**
+   * Identifying details. Text, not numbers: a sort code or account number can
+   * begin with a zero, and nothing is ever computed from them.
+   */
+  account_number?: string | null
+  sort_code?: string | null
+  iban?: string | null
+  account_holder?: string | null
   opened_date: string | null
   closed_date: string | null
   status: AccountStatus

@@ -40,6 +40,10 @@ export async function POST(req: Request) {
       currency: (body.currency || 'GBP').toUpperCase(),
       opened_date: body.opened_date || null,
       notes: body.notes || null,
+      account_number: body.account_number || null,
+      sort_code: body.sort_code || null,
+      iban: body.iban || null,
+      account_holder: body.account_holder || null,
     })
     .select()
     .single()

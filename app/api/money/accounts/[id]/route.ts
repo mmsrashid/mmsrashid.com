@@ -28,7 +28,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
     patch.status = body.status
   }
-  for (const k of ['institution', 'notes'] as const) {
+  for (const k of [
+    'institution', 'notes', 'account_number', 'sort_code', 'iban', 'account_holder',
+  ] as const) {
     if (body[k] !== undefined) patch[k] = body[k] || null
   }
   if (body.currency !== undefined) patch.currency = String(body.currency).toUpperCase()

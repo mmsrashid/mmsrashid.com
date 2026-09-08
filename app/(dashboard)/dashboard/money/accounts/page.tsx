@@ -1,7 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { reconcileAccount } from '@/lib/money/reconcile'
-import { ACCOUNT_KINDS, ACCOUNT_KIND_LABEL, type AccountKind, type MoneyAccount, type MoneyBalance } from '@/lib/money/types'
+import {
+  ACCOUNT_KINDS, ACCOUNT_KIND_LABEL, formatSortCode, maskAccountNumber,
+  type AccountKind, type MoneyAccount, type MoneyBalance,
+} from '@/lib/money/types'
 import type { MoneyTransaction } from '@/lib/money/spending-types'
 import { localToday } from '@/lib/local-date'
 
@@ -17,6 +20,14 @@ export default function MoneyAccountsPage() {
   const [name, setName] = useState('')
   const [institution, setInstitution] = useState('')
   const [kind, setKind] = useState<AccountKind>('current')
+
+  const [editing, setEditing] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    name: '', institution: '', kind: 'current' as AccountKind,
+    account_number: '', sort_code: '', account_holder: '', iban: '',
+  })
+  // Account numbers are masked by default: these pages get screenshotted.
+  const [revealed, setRevealed] = useState<Set<string>>(new Set())
 
   const [balanceFor, setBalanceFor] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
@@ -73,6 +84,43 @@ export default function MoneyAccountsPage() {
       if (!res.ok) return setError(d.error || 'Could not delete.')
       await load()
     } finally { setBusy(null) }
+  }
+
+  function startEdit(a: MoneyAccount) {
+    setEditing(a.id)
+    setForm({
+      name: a.name,
+      institution: a.institution ?? '',
+      kind: a.kind,
+      account_number: a.account_number ?? '',
+      sort_code: a.sort_code ?? '',
+      account_holder: a.account_holder ?? '',
+      iban: a.iban ?? '',
+    })
+    setError(''); setNotice('')
+  }
+
+  async function saveEdit(id: string) {
+    setBusy(id); setError(''); setNotice('')
+    try {
+      const res = await fetch(`/api/money/accounts/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const d = await res.json()
+      if (!res.ok) return setError(d.error || 'Could not update.')
+      setEditing(null)
+      await load()
+    } finally { setBusy(null) }
+  }
+
+  function toggleReveal(id: string) {
+    setRevealed(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   async function addBalance(accountId: string) {
@@ -143,7 +191,33 @@ export default function MoneyAccountsPage() {
                         {ACCOUNT_KIND_LABEL[a.kind]}{a.institution ? ` · ${a.institution}` : ''} · {a.currency}
                         {a.closed_date ? ` · closed ${a.closed_date}` : ''}
                       </div>
+                      {(a.sort_code || a.account_number) && (
+                        <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                          {a.sort_code ? formatSortCode(a.sort_code) : ''}
+                          {a.sort_code && a.account_number ? '  ' : ''}
+                          {a.account_number
+                            ? (revealed.has(a.id) ? a.account_number : maskAccountNumber(a.account_number))
+                            : ''}
+                          {a.account_number && (
+                            <button onClick={() => toggleReveal(a.id)}
+                              title={revealed.has(a.id) ? 'Hide' : 'Show in full'}
+                              style={{
+                                marginLeft: 6, border: 'none', background: 'none', padding: 0,
+                                fontSize: 10, color: '#3b82f6', cursor: 'pointer',
+                              }}>
+                              {revealed.has(a.id) ? 'hide' : 'show'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {a.account_holder && (
+                        <div style={{ fontSize: 10, color: '#9ca3af' }}>{a.account_holder}</div>
+                      )}
                     </div>
+                    <button onClick={() => (editing === a.id ? setEditing(null) : startEdit(a))}
+                      style={{ ...input, cursor: 'pointer', background: '#fff' }}>
+                      {editing === a.id ? 'Cancel' : 'Edit'}
+                    </button>
                     <button onClick={() => setBalanceFor(balanceFor === a.id ? null : a.id)}
                       style={{ ...input, cursor: 'pointer', background: '#fff' }}>
                       Balance
@@ -156,6 +230,35 @@ export default function MoneyAccountsPage() {
                     <button onClick={() => remove(a)} disabled={busy === a.id}
                       style={{ ...input, cursor: 'pointer', background: '#fff', color: '#dc2626' }}>Delete</button>
                   </div>
+                  {editing === a.id && (
+                    <div style={{
+                      marginTop: 8, padding: 10, background: '#fafafa',
+                      border: '1px solid #f3f4f6', borderRadius: 8,
+                      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8,
+                    }}>
+                      <input style={input} placeholder="Account name" value={form.name}
+                        onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                      <input style={input} placeholder="Bank / provider" value={form.institution}
+                        onChange={e => setForm(f => ({ ...f, institution: e.target.value }))} />
+                      <select style={input} value={form.kind}
+                        onChange={e => setForm(f => ({ ...f, kind: e.target.value as AccountKind }))}>
+                        {ACCOUNT_KINDS.map(k => <option key={k} value={k}>{ACCOUNT_KIND_LABEL[k]}</option>)}
+                      </select>
+                      <input style={input} placeholder="Sort code" value={form.sort_code}
+                        onChange={e => setForm(f => ({ ...f, sort_code: e.target.value }))} />
+                      <input style={input} placeholder="Account number" value={form.account_number}
+                        onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))} />
+                      <input style={input} placeholder="Account holder" value={form.account_holder}
+                        onChange={e => setForm(f => ({ ...f, account_holder: e.target.value }))} />
+                      <input style={input} placeholder="IBAN (optional)" value={form.iban}
+                        onChange={e => setForm(f => ({ ...f, iban: e.target.value }))} />
+                      <button onClick={() => saveEdit(a.id)} disabled={busy === a.id || !form.name.trim()}
+                        style={{ ...input, background: '#111', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+                        Save
+                      </button>
+                    </div>
+                  )}
+
                   {balanceFor === a.id && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                       <input style={input} type="date" value={asOf} onChange={e => setAsOf(e.target.value)} />
