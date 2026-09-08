@@ -74,14 +74,22 @@ export default function TransactionsPage() {
     const d = await res.json()
     if (!res.ok) return setError(d.error || 'Could not create the rule.')
 
+    // Full re-run, not just the uncategorised.
+    //
+    // A new rule usually exists because something was categorised WRONGLY — an
+    // internal transfer read as spending, say. Limiting this to uncategorised
+    // rows meant the rule appeared to do nothing on exactly the transactions it
+    // was created to fix. Anything set by hand is still protected: applyRules
+    // never overwrites a manual choice.
     const re = await fetch('/api/money/transactions/recategorise', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ only_uncategorised: true }),
+      body: JSON.stringify({}),
     })
     const rd = await re.json()
     setNotice(
-      `Rule saved. ${rd.changed ?? 0} transaction(s) recategorised, ` +
-      `${rd.still_uncategorised ?? 0} still uncategorised.`,
+      `Rule saved. ${rd.changed ?? 0} transaction(s) recategorised out of ${rd.examined ?? 0} ` +
+      `checked; ${rd.still_uncategorised ?? 0} still uncategorised. Anything you set by hand ` +
+      `was left alone.`,
     )
     await load()
   }
