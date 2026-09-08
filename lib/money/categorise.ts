@@ -40,7 +40,20 @@ export function applyRules<T extends Categorisable>(
     if (txn.category_source === 'manual') return txn
 
     const hit = ordered.find(r => matches(r, txn.description))
-    if (!hit) return { ...txn, category_id: null, category_source: null }
+
+    if (!hit) {
+      // No rule matches. Only clear a category that a RULE set, because the rule
+      // that set it may since have been deleted or edited.
+      //
+      // An 'ai' category must survive: nothing about the absence of a matching
+      // rule says the model was wrong. Clearing it here destroyed 391 working
+      // categorisations the moment a single rule was added and re-run — the
+      // first rule a user writes should not blank the rest of their data.
+      if (txn.category_source === 'rule') {
+        return { ...txn, category_id: null, category_source: null }
+      }
+      return txn
+    }
 
     return {
       ...txn,

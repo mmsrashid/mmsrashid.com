@@ -80,6 +80,22 @@ describe('applyRules', () => {
     expect(r[0]).toMatchObject({ category_id: null, category_source: null })
   })
 
+  it('KEEPS an ai category when no rule matches', () => {
+    // Regression guard. Clearing these wiped 391 working categorisations the
+    // moment one unrelated rule was added and re-run: the absence of a matching
+    // rule says nothing about whether the model was right.
+    const r = applyRules([txn('TESCO', { category_id: 'groceries', category_source: 'ai' })], [])
+    expect(r[0]).toMatchObject({ category_id: 'groceries', category_source: 'ai' })
+  })
+
+  it('lets a rule override an ai category when one does match', () => {
+    const r = applyRules(
+      [txn('MOHAMMED RASHID internal', { category_id: 'shopping', category_source: 'ai' })],
+      [rule({ pattern: 'internal', category_id: 'transfer' })],
+    )
+    expect(r[0]).toMatchObject({ category_id: 'transfer', category_source: 'rule' })
+  })
+
   it('leaves an unmatched transaction uncategorised', () => {
     const r = applyRules([txn('MYSTERY MERCHANT')], [rule({ pattern: 'tesco', category_id: 'g' })])
     expect(r[0]).toMatchObject({ category_id: null, category_source: null })

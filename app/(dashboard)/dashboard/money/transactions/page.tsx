@@ -15,6 +15,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [categorising, setCategorising] = useState(false)
 
   const [search, setSearch] = useState('')
   const [onlyUncategorised, setOnlyUncategorised] = useState(false)
@@ -94,6 +95,39 @@ export default function TransactionsPage() {
     await load()
   }
 
+  /**
+   * Runs categorisation over uncategorised rows, in slices until done.
+   *
+   * Sliced rather than one long request: a few hundred rows needing the model
+   * will not finish inside a single function invocation, and a run that dies
+   * half way should still have saved what it did.
+   */
+  async function categoriseAll() {
+    setError(''); setNotice('')
+    setCategorising(true)
+    let rule = 0, model = 0, rounds = 0
+    try {
+      for (;;) {
+        const d = await fetch('/api/money/transactions/categorise', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        }).then(r => r.json())
+        if (d.error) { setError(d.error); break }
+        rule += d.by_rule ?? 0
+        model += d.by_model ?? 0
+        rounds++
+        setNotice(
+          `Categorising… ${rule + model} done, ${d.still_uncategorised ?? 0} to go.`,
+        )
+        if (!d.more_to_do || d.examined === 0) break
+        // Nothing changed this round, so another identical round will not help.
+        if ((d.by_rule ?? 0) + (d.by_model ?? 0) === 0) break
+        if (rounds > 40) break
+      }
+      setNotice(`Categorised ${rule + model} transaction(s) — ${rule} by rule, ${model} by me.`)
+      await load()
+    } finally { setCategorising(false) }
+  }
+
   const filtered = useMemo(() => txns.filter(t => {
     if (onlyUncategorised && t.category_id) return false
     if (accountFilter && t.account_id !== accountFilter) return false
@@ -133,6 +167,13 @@ export default function TransactionsPage() {
             onChange={e => setOnlyUncategorised(e.target.checked)} />
           uncategorised only
         </label>
+        {txns.some(t => !t.category_id) && (
+          <button onClick={categoriseAll} disabled={categorising}
+            title="Apply rules, then let me categorise whatever is left"
+            style={{ ...input, cursor: categorising ? 'wait' : 'pointer', background: '#111', color: '#fff', fontWeight: 600 }}>
+            {categorising ? 'Categorising…' : `Categorise ${txns.filter(t => !t.category_id).length}`}
+          </button>
+        )}
         <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 'auto' }}>
           {filtered.length} of {txns.length}
         </span>
