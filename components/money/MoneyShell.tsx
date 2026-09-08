@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import PendingReview from './PendingReview'
+import ImportQueue, { type StagedFile } from './ImportQueue'
 import type { ExtractedBalance, MoneyAccount } from '@/lib/money/types'
 
 const TABS = [
@@ -17,7 +18,7 @@ interface Msg { role: 'ai' | 'user'; text: string }
 
 export default function MoneyShell({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<Msg[]>([
-    { role: 'ai', text: "I can read a statement or a banking-app screenshot and file the balances. Drop one in, or ask me about your net worth." },
+    { role: 'ai', text: "Drop in bank statements — CSV, PDF or a screenshot. Several at once is fine, and you pick which account each belongs to before anything is filed." },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -30,7 +31,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
   // "I could not tell which account" was a dead end: the only advice was to
   // re-upload, which failed identically.
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
-  const [uploadAccountId, setUploadAccountId] = useState('')
+  const [staged, setStaged] = useState<StagedFile[]>([])
   // Bumping this remounts the tab subtree so its useEffect refetches.
   const [dataVersion, setDataVersion] = useState(0)
 
@@ -49,30 +50,47 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
       .then(d => {
         const live = Array.isArray(d) ? d.filter((a: MoneyAccount) => a.status === 'active') : []
         setAccounts(live)
-        // With exactly one account there is nothing to choose.
-        if (live.length === 1) setUploadAccountId(live[0].id)
+        // With exactly one account there is nothing to choose, so pre-fill any
+        // file already waiting.
+        if (live.length === 1) {
+          setStaged(prev => prev.map(f =>
+            f.status === 'waiting' && !f.accountId ? { ...f, accountId: live[0].id } : f))
+        }
       })
       .catch(() => setAccounts([]))
   }, [dataVersion])
 
   const say = (text: string) => setMessages(m => [...m, { role: 'ai', text }])
 
-  const upload = useCallback(async (file: File) => {
-    if (uploading) return
-    setUploading(true)
-    setMessages(m => [...m, { role: 'user', text: `📎 ${file.name || 'screenshot'}` }])
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      if (uploadAccountId) fd.append('account_id', uploadAccountId)
-      const res = await fetch('/api/money/ingest', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) { say(data.error || 'I could not read that file.'); return }
+  /** Adds files to the queue. Accounts are chosen there, before anything runs. */
+  const stage = useCallback((files: FileList | File[]) => {
+    const only = accounts.length === 1 ? accounts[0].id : ''
+    const added: StagedFile[] = Array.from(files).map((file, i) => ({
+      id: `${Date.now()}-${i}-${file.name}`,
+      file,
+      accountId: only,
+      status: 'waiting',
+    }))
+    if (added.length === 0) return
+    setStaged(prev => [...prev, ...added])
+  }, [accounts])
 
+  /** Turns one ingest response into a sentence. */
+  const describe = useCallback((data: {
+    applied?: number
+    pending?: unknown[]
+    unmatched?: string[]
+    transactions?: {
+      filed?: number; skipped_duplicates?: number; ai_categorised?: number
+      left_uncategorised?: number; low_confidence?: number
+      unresolved_account?: boolean; warning?: string | null
+      proposed_rules?: unknown[]
+    } | null
+  }) => {
       const bits: string[] = []
       if (data.applied) bits.push(`Filed ${data.applied} balance${data.applied === 1 ? '' : 's'}.`)
       if (data.pending?.length) bits.push(`${data.pending.length} need${data.pending.length === 1 ? 's' : ''} your check below.`)
-      if (data.unmatched?.length) bits.push(`No matching account for: ${data.unmatched.join(', ')}. Add the account, then re-upload.`)
+      if (data.unmatched?.length) bits.push(`No matching account name for: ${data.unmatched.join(', ')}.`)
 
       const tx = data.transactions
       if (tx) {
@@ -82,30 +100,87 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         if (tx.left_uncategorised) bits.push(`${tx.left_uncategorised} filed but not yet categorised — they are safe, just uncategorised.`)
         if (tx.low_confidence) bits.push(`${tx.low_confidence} transaction line(s) were unclear and not filed.`)
         if (tx.unresolved_account) {
-          bits.push(
-            accounts.length > 1
-              ? 'I could not tell which account those transactions belong to. Pick one in "File uploads into" above and drop the file again.'
-              : 'I could not tell which account those transactions belong to. Add the account first, then re-upload.',
-          )
+          bits.push('Could not tell which account those transactions belong to.')
         }
         if (tx.warning) bits.push(tx.warning)
-        // Offering the rules is what turns a one-off AI guess into a permanent,
-        // deterministic decision the user controls.
         if (tx.proposed_rules?.length) {
-          bits.push(`I can turn ${tx.proposed_rules.length} of those into reusable rules from the Transactions tab.`)
+          bits.push(`${tx.proposed_rules.length} could become reusable rules — see the Transactions tab.`)
         }
       }
-      say(bits.join(' ') || 'Nothing to file from that one.')
-      setPending(data.pending ?? [])
-      setPendingDocId(data.document_id ?? null)
+      return bits.join(' ') || 'Nothing to file from that one.'
+  }, [])
+
+  /**
+   * Imports the queue one file at a time.
+   *
+   * Deliberately sequential. Dedupe keys are generated against what is already
+   * stored, so two files for the same account running at once would each decide
+   * the same transaction was new and insert it twice.
+   */
+  const runQueue = useCallback(async () => {
+    if (uploading) return
+    const queue = staged.filter(f => f.status === 'waiting' && f.accountId)
+    if (queue.length === 0) return
+
+    setUploading(true)
+    const totals = { files: 0, balances: 0, transactions: 0, skipped: 0, failed: 0 }
+
+    try {
+      for (const item of queue) {
+        setStaged(prev => prev.map(f => (f.id === item.id ? { ...f, status: 'importing' } : f)))
+        const accountName = accounts.find(a => a.id === item.accountId)?.name ?? 'that account'
+
+        try {
+          const fd = new FormData()
+          fd.append('file', item.file)
+          fd.append('account_id', item.accountId)
+          const res = await fetch('/api/money/ingest', { method: 'POST', body: fd })
+          const data = await res.json()
+
+          if (!res.ok) {
+            totals.failed++
+            setStaged(prev => prev.map(f => (f.id === item.id
+              ? { ...f, status: 'failed', summary: data.error || 'Could not read that file.' }
+              : f)))
+            continue
+          }
+
+          totals.files++
+          totals.balances += data.applied ?? 0
+          totals.transactions += data.transactions?.filed ?? 0
+          totals.skipped += data.transactions?.skipped_duplicates ?? 0
+
+          setStaged(prev => prev.map(f => (f.id === item.id
+            ? { ...f, status: 'done', summary: `${accountName}: ${describe(data)}` }
+            : f)))
+
+          // Balances needing review are held per file; the last one with any
+          // wins the panel, which is fine — it is re-shown after each import.
+          if (data.pending?.length) {
+            setPending(data.pending)
+            setPendingDocId(data.document_id ?? null)
+          }
+        } catch (err) {
+          totals.failed++
+          setStaged(prev => prev.map(f => (f.id === item.id
+            ? { ...f, status: 'failed', summary: String(err) }
+            : f)))
+        }
+      }
+
+      const parts = [`Imported ${totals.files} file${totals.files === 1 ? '' : 's'}.`]
+      if (totals.transactions) parts.push(`${totals.transactions} transactions filed.`)
+      if (totals.balances) parts.push(`${totals.balances} balances filed.`)
+      if (totals.skipped) parts.push(`${totals.skipped} already on record, skipped.`)
+      if (totals.failed) parts.push(`${totals.failed} file(s) failed — see the list.`)
+      say(parts.join(' '))
+
       setDataVersion(v => v + 1)
       router.refresh()
-    } catch (err) {
-      say(`That upload failed: ${String(err)}`)
     } finally {
       setUploading(false)
     }
-  }, [uploading, router, uploadAccountId])
+  }, [uploading, staged, accounts, describe, router])
 
   async function send() {
     const text = input.trim()
@@ -141,7 +216,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
       onDragLeave={() => setDragging(false)}
       onDrop={e => {
         e.preventDefault(); setDragging(false)
-        const f = e.dataTransfer.files?.[0]; if (f) void upload(f)
+        if (e.dataTransfer.files?.length) stage(e.dataTransfer.files)
       }}
     >
       <aside style={{ width: 300, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
@@ -168,44 +243,34 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
               }}
             />
           )}
+          <ImportQueue
+            staged={staged}
+            accounts={accounts}
+            busy={uploading}
+            onSetAccount={(id, accountId) =>
+              setStaged(prev => prev.map(f => (f.id === id ? { ...f, accountId } : f)))}
+            onRemove={id => setStaged(prev => prev.filter(f => f.id !== id))}
+            onImport={runQueue}
+            onClear={() => setStaged([])}
+          />
           {(loading || uploading) && (
-            <div style={{ fontSize: 11, color: '#9ca3af' }}>{uploading ? 'Reading…' : 'Thinking…'}</div>
+            <div style={{ fontSize: 11, color: '#9ca3af' }}>{uploading ? 'Importing…' : 'Thinking…'}</div>
           )}
         </div>
-        {accounts.length > 1 && (
-          <div style={{ padding: '8px 10px 0', borderTop: '1px solid #e5e7eb' }}>
-            <label style={{ fontSize: 10, color: '#6b7280', display: 'block', marginBottom: 3 }}>
-              File uploads into
-            </label>
-            <select
-              value={uploadAccountId}
-              onChange={e => setUploadAccountId(e.target.value)}
-              style={{
-                width: '100%', border: '1px solid #d1d5db', borderRadius: 8,
-                padding: '5px 8px', fontSize: 11,
-                borderColor: uploadAccountId ? '#d1d5db' : '#fbbf24',
-              }}
-            >
-              <option value="">— work it out from the file —</option>
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
-        )}
-        <div style={{ padding: 10, borderTop: accounts.length > 1 ? 'none' : '1px solid #e5e7eb', display: 'flex', gap: 6 }}>
+        <div style={{ padding: 10, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6 }}>
           <button onClick={() => fileInput.current?.click()} title="Attach a statement, screenshot or CSV"
             style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, padding: '6px 9px', cursor: 'pointer' }}>
             📎
           </button>
-          <input ref={fileInput} type="file" style={{ display: 'none' }}
+          <input ref={fileInput} type="file" multiple style={{ display: 'none' }}
             accept="image/*,application/pdf,.csv,text/csv"
-            onChange={e => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = '' }} />
+            onChange={e => { if (e.target.files?.length) stage(e.target.files); e.target.value = '' }} />
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') void send() }}
             onPaste={e => {
-              const f = Array.from(e.clipboardData.files)[0]
-              if (f) { e.preventDefault(); void upload(f) }
+              if (e.clipboardData.files.length) { e.preventDefault(); stage(e.clipboardData.files) }
             }}
             placeholder="Ask, or paste a screenshot…"
             style={{ flex: 1, border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 10px', fontSize: 12 }}
