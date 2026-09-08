@@ -12,11 +12,23 @@ import type { ExtractedBalance } from '@/lib/money/types'
 import type { MoneyCategory, MoneyCategoryRule, ParsedTransaction } from '@/lib/money/spending-types'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+// Importing three years of statements is a big job. The platform may clamp this
+// to a lower ceiling on the current plan, which is why the categorisation step
+// has its own budget and the transactions are written before it runs.
+export const maxDuration = 300
 
 const MAX_BYTES = 20 * 1024 * 1024
 
+/**
+ * Vercel kills the function at maxDuration. Categorisation is an enrichment
+ * step, so it must never be the reason a whole import is lost — it runs only
+ * while there is budget left, and whatever it does not reach stays visibly
+ * uncategorised for a later pass.
+ */
+const AI_BUDGET_MS = 35_000
+
 export async function POST(req: Request) {
+  const startedAt = Date.now()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -169,6 +181,7 @@ export async function POST(req: Request) {
     low_confidence: number
     unresolved_account: boolean
     ai_categorised: number
+    left_uncategorised?: number
     proposed_rules: CategorySuggestion[]
     warning: string | null
   } | null = null
@@ -237,6 +250,8 @@ export async function POST(req: Request) {
       let suggestions: CategorySuggestion[] = []
       let inserted: { id: string }[] = []
       let txnErr: { message: string } | null = null
+      let aiApplied = 0
+      let aiSkipped = 0
 
       if (fresh.length > 0) {
         const { data: rules } = await supabase.from('money_category_rules').select('*')
@@ -250,29 +265,12 @@ export async function POST(req: Request) {
           (rules ?? []) as MoneyCategoryRule[],
         )
 
-        // Rules first, Claude only for what they missed. On a first import that
-        // is everything; once suggestions have been accepted as rules it is
-        // almost nothing, and the result becomes deterministic.
-        const unmatched = categorised.filter(c => !c.category_id).map(c => c.description)
-        if (unmatched.length > 0) {
-          const { data: cats } = await supabase.from('money_categories').select('*')
-          try {
-            suggestions = await suggestCategories(unmatched, (cats ?? []) as MoneyCategory[])
-          } catch {
-            // A suggestion failure must not lose the transactions themselves;
-            // they simply stay uncategorised and visible.
-            suggestions = []
-          }
-          const byDescription = new Map(suggestions.map(x => [x.description.toLowerCase(), x]))
-          for (const c of categorised) {
-            if (c.category_id) continue
-            const hit = byDescription.get(c.description.trim().toLowerCase())
-            if (!hit) continue
-            c.category_id = hit.category_id
-            c.category_source = 'ai' as never
-          }
-        }
-
+        // Write the transactions FIRST, categorised by rules alone.
+        //
+        // Rules are instant and deterministic; the AI pass is neither. Doing the
+        // model calls before the insert meant a large import that ran out of time
+        // saved nothing at all — three years of history discarded because an
+        // optional enrichment step was slow. The data lands first, always.
         const payload = fresh.map((x, i) => ({
           user_id: user.id,
           account_id: targetAccountId,
@@ -290,9 +288,47 @@ export async function POST(req: Request) {
         const res = await supabase
           .from('money_transactions')
           .upsert(payload, { onConflict: 'user_id,dedupe_key' })
-          .select('id')
+          .select('id, description, category_id')
         inserted = (res.data ?? []) as { id: string }[]
         txnErr = res.error
+
+        // Now enrich, if there is time. Anything not reached stays uncategorised
+        // and visible, and "Recategorise" or a later upload will pick it up.
+        const storedRows = (res.data ?? []) as {
+          id: string; description: string; category_id: string | null
+        }[]
+        const needsCategory = storedRows.filter(r => !r.category_id)
+
+        if (!txnErr && needsCategory.length > 0) {
+          if (Date.now() - startedAt > AI_BUDGET_MS) {
+            aiSkipped = needsCategory.length
+          } else {
+            const { data: cats } = await supabase.from('money_categories').select('*')
+            try {
+              suggestions = await suggestCategories(
+                needsCategory.map(r => r.description),
+                (cats ?? []) as MoneyCategory[],
+              )
+            } catch {
+              suggestions = []
+            }
+
+            const byDescription = new Map(suggestions.map(x => [x.description.toLowerCase(), x]))
+            for (const row of needsCategory) {
+              const hit = byDescription.get(row.description.trim().toLowerCase())
+              if (!hit) continue
+              if (Date.now() - startedAt > AI_BUDGET_MS + 15_000) {
+                aiSkipped++
+                continue
+              }
+              const { error: upErr } = await supabase
+                .from('money_transactions')
+                .update({ category_id: hit.category_id, category_source: 'ai' })
+                .eq('id', row.id)
+              if (!upErr) aiApplied++
+            }
+          }
+        }
       }
 
       // Distinct proposals only, so the UI can offer "make this a rule" once per
@@ -306,9 +342,16 @@ export async function POST(req: Request) {
         skipped_duplicates: alreadyThere,
         low_confidence: lowConfidence.length,
         unresolved_account: false,
-        ai_categorised: suggestions.length,
+        ai_categorised: aiApplied,
+        left_uncategorised: aiSkipped,
         proposed_rules: proposedRules,
-        warning: txnErr ? txnErr.message : warning,
+        warning: txnErr
+          ? txnErr.message
+          : aiSkipped > 0
+            ? `${aiSkipped} transaction(s) were filed but not categorised — this import was too ` +
+              `large to finish that in one go. Nothing is lost: use Recategorise, or upload again ` +
+              `and only the categorising will run.`
+            : warning,
       }
     }
   }
