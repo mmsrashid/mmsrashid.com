@@ -34,7 +34,18 @@ export function applyRules<T extends Categorisable>(
   transactions: T[],
   rules: MoneyCategoryRule[],
 ): T[] {
-  const ordered = [...rules].sort((a, b) => a.priority - b.priority)
+  const ordered = [...rules].sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+    // At equal priority, a rule that also assigns a property wins.
+    //
+    // Two rules for the same merchant are easy to end up with, and when one
+    // carries a property and the other does not, "first match wins" made the
+    // outcome depend on row order. In real data that shadowed a 4FLH rule with
+    // an older property-less duplicate: 14 matching transactions, only the 4
+    // tagged by hand had a property. The rule that says more is the one the
+    // user most recently meant.
+    return Number(Boolean(b.property_id)) - Number(Boolean(a.property_id))
+  })
 
   return transactions.map(txn => {
     if (txn.category_source === 'manual') return txn

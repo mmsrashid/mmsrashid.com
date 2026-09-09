@@ -1,10 +1,13 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import CategoryPicker from '@/components/money/CategoryPicker'
+import RulesManager from '@/components/money/RulesManager'
 import {
   sortTransactions, nextSort, type Sort, type SortKey,
 } from '@/lib/money/sort-transactions'
-import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
+import type {
+  MoneyCategory, MoneyCategoryRule, MoneyTransaction,
+} from '@/lib/money/spending-types'
 import type { MoneyProperty } from '@/lib/money/property-types'
 import type { MoneyAccount } from '@/lib/money/types'
 
@@ -16,6 +19,7 @@ export default function TransactionsPage() {
   const [cats, setCats] = useState<MoneyCategory[]>([])
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
   const [properties, setProperties] = useState<MoneyProperty[]>([])
+  const [rules, setRules] = useState<MoneyCategoryRule[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -32,11 +36,13 @@ export default function TransactionsPage() {
     fetch('/api/money/categories').then(r => r.json()),
     fetch('/api/money/accounts').then(r => r.json()),
     fetch('/api/money/properties').then(r => r.json()).catch(() => []),
-  ]).then(([t, c, a, p]) => {
+    fetch('/api/money/rules').then(r => r.json()).catch(() => []),
+  ]).then(([t, c, a, p, r]) => {
     setTxns(Array.isArray(t) ? t : [])
     setCats(Array.isArray(c) ? c : [])
     setAccounts(Array.isArray(a) ? a : [])
     setProperties(Array.isArray(p) ? p : [])
+    setRules(Array.isArray(r) ? r : [])
     setLoading(false)
   }), [])
 
@@ -99,6 +105,9 @@ export default function TransactionsPage() {
     })
     const d = await res.json()
     if (!res.ok) return setError(d.error || 'Could not create the rule.')
+    // Say so when this updated a rule instead of adding one, otherwise the
+    // count in the Rules panel not going up looks like nothing happened.
+    const verb = d.replaced_existing ? 'Rule updated' : 'Rule saved'
 
     // Full re-run, not just the uncategorised.
     //
@@ -113,7 +122,7 @@ export default function TransactionsPage() {
     })
     const rd = await re.json()
     setNotice(
-      `Rule saved${propertyCode ? ` (category and ${propertyCode})` : ''}. ` +
+      `${verb}${propertyCode ? ` (category and ${propertyCode})` : ''}. ` +
       `${rd.changed ?? 0} transaction(s) updated out of ${rd.examined ?? 0} checked; ` +
       `${rd.still_uncategorised ?? 0} still uncategorised. Anything you set by hand was left alone.`,
     )
@@ -305,6 +314,13 @@ export default function TransactionsPage() {
           </tbody>
         </table>
       </div>
+      <RulesManager
+        rules={rules}
+        categories={cats}
+        properties={properties}
+        onChanged={load}
+      />
+
       {filtered.length > 500 && (
         <p style={{ fontSize: 10, color: '#9ca3af', marginTop: 8 }}>
           Showing the first 500 of {filtered.length}, in the order you sorted them. Narrow the

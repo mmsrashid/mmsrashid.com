@@ -34,17 +34,33 @@ export async function POST(req: Request) {
     catch { return NextResponse.json({ error: 'That is not a valid regular expression.' }, { status: 400 }) }
   }
 
-  const { data, error } = await supabase
+  const fields = {
+    pattern, match_type: body.match_type,
+    category_id: body.category_id, priority: Number(body.priority) || 100,
+    // One rule can set both category and property. The four property codes are
+    // distinctive strings, so matching on them is unusually reliable.
+    property_id: body.property_id || null,
+  }
+
+  // The same pattern updates its rule rather than adding a second one.
+  //
+  // Pressing Rule on a second transaction from the same merchant is the natural
+  // way to correct a rule, but it used to insert a duplicate. Real data ended up
+  // with PEPPER MONEY three times and SOUZA SILVA L three times, and where one
+  // copy assigned a property and another did not, the older copy could win — so
+  // the fix looked like it had not saved.
+  const { data: existing } = await supabase
     .from('money_category_rules')
-    .insert({
-      user_id: user.id, pattern, match_type: body.match_type,
-      category_id: body.category_id, priority: Number(body.priority) || 100,
-      // One rule can set both category and property. The four property codes are
-      // distinctive strings, so matching on them is unusually reliable.
-      property_id: body.property_id || null,
-    })
-    .select()
-    .single()
+    .select('id')
+    .eq('pattern', pattern)
+    .eq('match_type', body.match_type)
+    .maybeSingle()
+
+  const q = existing
+    ? supabase.from('money_category_rules').update(fields).eq('id', existing.id)
+    : supabase.from('money_category_rules').insert({ user_id: user.id, ...fields })
+
+  const { data, error } = await q.select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  return NextResponse.json({ ...data, replaced_existing: Boolean(existing) })
 }

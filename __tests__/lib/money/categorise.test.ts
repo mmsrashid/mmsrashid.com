@@ -140,4 +140,44 @@ describe('applyRules', () => {
     )
     expect(r[0]).toMatchObject({ category_id: 'x', category_source: 'manual', property_id: 'p' })
   })
+
+  describe('duplicate rules for the same merchant', () => {
+    // Taken from real data: pressing Rule twice on the same merchant left an
+    // older property-less rule alongside a newer one carrying 4FLH. Both at
+    // priority 100, first-match-wins, so the outcome depended on row order —
+    // 14 matching transactions and only the 4 tagged by hand had a property.
+    const withProperty = rule({
+      pattern: 'ALDERMORE BANK PLC', category_id: 'mortgage-interest', property_id: 'prop-4flh',
+    })
+    const withoutProperty = rule({
+      pattern: 'ALDERMORE BANK PLC', category_id: 'mortgage-interest', property_id: null,
+    })
+
+    it('prefers the rule that assigns a property, whichever order they arrive in', () => {
+      for (const rules of [[withoutProperty, withProperty], [withProperty, withoutProperty]]) {
+        const r = applyRules([txn('ALDERMORE BANK PLC 4012')], rules)
+        expect(r[0].property_id).toBe('prop-4flh')
+        expect(r[0].category_id).toBe('mortgage-interest')
+      }
+    })
+
+    it('still respects priority over specificity', () => {
+      // Specificity only breaks ties. An explicit lower priority number is a
+      // deliberate ordering choice and must not be overridden by it.
+      const r = applyRules([txn('ALDERMORE BANK PLC 4012')], [
+        { ...withProperty, priority: 200 },
+        { ...withoutProperty, category_id: 'wins-on-priority', priority: 10 },
+      ])
+      expect(r[0].category_id).toBe('wins-on-priority')
+      expect(r[0].property_id).toBeNull()
+    })
+
+    it('is unaffected when neither duplicate carries a property', () => {
+      const r = applyRules([txn('PEPPER MONEY 8891')], [
+        rule({ pattern: 'PEPPER MONEY', category_id: 'first' }),
+        rule({ pattern: 'PEPPER MONEY', category_id: 'second' }),
+      ])
+      expect(r[0].category_id).toBe('first')
+    })
+  })
 })
