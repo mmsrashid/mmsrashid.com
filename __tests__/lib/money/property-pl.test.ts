@@ -1,4 +1,4 @@
-import { buildPropertyPL, taxYearBounds } from '@/lib/money/property-pl'
+import { buildPropertyPL, taxYearBounds, latestTaxYearWithActivity } from '@/lib/money/property-pl'
 import type { MoneyProperty, PropertyTreatment } from '@/lib/money/property-types'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
 import type { MoneyAccount } from '@/lib/money/types'
@@ -229,5 +229,33 @@ describe('buildPropertyPL', () => {
       txn(-0.1, 'repairs', 'p', `2026-05-0${i + 1}`))
     const r = buildPropertyPL([prop({ id: 'p', code: '4FLH' })], rows, CATS, [acct()], YEAR)
     expect(r.perProperty[0].allowableExpenses).toBe(1)
+  })
+})
+
+describe('latestTaxYearWithActivity', () => {
+  const t = (txn_date: string, property_id: string | null = 'p1') => ({ txn_date, property_id })
+
+  it('returns the most recent tax year that has tagged activity', () => {
+    expect(latestTaxYearWithActivity([
+      t('2023-09-01'), t('2024-11-20'), t('2024-06-01'),
+    ])).toBe('2024/25')
+  })
+
+  it('ignores untagged transactions', () => {
+    // A later personal transaction must not select an empty property year.
+    expect(latestTaxYearWithActivity([
+      t('2024-11-20'), t('2025-12-01', null),
+    ])).toBe('2024/25')
+  })
+
+  it('puts 1 January to 5 April in the year that started the previous April', () => {
+    expect(latestTaxYearWithActivity([t('2025-04-05')])).toBe('2024/25')
+    expect(latestTaxYearWithActivity([t('2025-04-06')])).toBe('2025/26')
+    expect(latestTaxYearWithActivity([t('2025-01-15')])).toBe('2024/25')
+  })
+
+  it('returns null when nothing is tagged, so the caller keeps its default', () => {
+    expect(latestTaxYearWithActivity([])).toBeNull()
+    expect(latestTaxYearWithActivity([t('2024-06-01', null)])).toBeNull()
   })
 })

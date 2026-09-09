@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import PropertyPLTable from '@/components/money/PropertyPLTable'
 import type { PropertyPL } from '@/lib/money/property-pl'
+import { latestTaxYearWithActivity } from '@/lib/money/property-pl'
 import type { MoneyProperty } from '@/lib/money/property-types'
 
 /** Tax years run 6 April to 5 April, so the label is a straddling pair. */
@@ -20,6 +21,7 @@ function taxYearOptions(count = 6): string[] {
 export default function PropertyPage() {
   const years = taxYearOptions()
   const [taxYear, setTaxYear] = useState(years[0])
+  const [yearPicked, setYearPicked] = useState(false)
   const [pl, setPl] = useState<PropertyPL | null>(null)
   const [properties, setProperties] = useState<MoneyProperty[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,6 +49,27 @@ export default function PropertyPage() {
   }), [])
 
   useEffect(() => { void load(taxYear) }, [load, taxYear])
+
+  // Open on the most recent tax year that actually has property activity.
+  //
+  // Defaulting to the current tax year showed a table of zeros whenever the
+  // latest statement was from an earlier year, which reads as "no data" rather
+  // than "not this year". Runs once, and only moves the selector if that year
+  // is one of the offered options, so it can never select something unreachable.
+  useEffect(() => {
+    if (yearPicked) return
+    let cancelled = false
+    fetch('/api/money/transactions')
+      .then(r => r.json())
+      .then((rows: { txn_date: string; property_id?: string | null }[]) => {
+        if (cancelled || !Array.isArray(rows)) return
+        const latest = latestTaxYearWithActivity(rows)
+        setYearPicked(true)
+        if (latest && years.includes(latest)) setTaxYear(latest)
+      })
+      .catch(() => setYearPicked(true))
+    return () => { cancelled = true }
+  }, [yearPicked, years])
 
   async function addProperty() {
     setError('')

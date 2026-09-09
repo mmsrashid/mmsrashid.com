@@ -189,7 +189,8 @@ export default function PersonalPage() {
           <p style={{ fontSize: 12, color: '#92400e' }}>
             <strong>{summary.uncategorisedCount}</strong> transaction
             {summary.uncategorisedCount === 1 ? '' : 's'} worth{' '}
-            <strong>{money(summary.uncategorisedValue)}</strong> aren&apos;t categorised yet, so the
+            <strong>{money(summary.uncategorisedValue)}</strong>{' '}
+            aren&apos;t categorised yet, so the
             breakdown below is incomplete. Categorise them in the Transactions tab.
           </p>
         </div>

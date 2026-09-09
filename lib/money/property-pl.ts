@@ -197,3 +197,27 @@ export function buildPropertyPL(
     currencyWarning,
   }
 }
+
+/**
+ * The most recent tax year that has any property-tagged activity.
+ *
+ * The year selector defaulted to the current tax year, which showed a table of
+ * zeros whenever the latest statement was from an earlier year — a working
+ * portfolio reading as an empty one. Returns null when nothing is tagged yet,
+ * in which case the caller should keep its own default.
+ */
+export function latestTaxYearWithActivity(
+  transactions: { txn_date: string; property_id?: string | null }[],
+): string | null {
+  let best: string | null = null
+  for (const t of transactions) {
+    if (!t.property_id) continue
+    const [y, m] = t.txn_date.split('-').map(Number)
+    // The year turns on 6 April, so 1 January to 5 April belong to the year
+    // that started the previous April.
+    const startYear = m > 4 || (m === 4 && Number(t.txn_date.slice(8, 10)) >= 6) ? y : y - 1
+    const year = `${startYear}/${String((startYear + 1) % 100).padStart(2, '0')}`
+    if (best === null || year > best) best = year
+  }
+  return best
+}
