@@ -49,10 +49,15 @@ export async function POST(req: Request) {
   // with PEPPER MONEY three times and SOUZA SILVA L three times, and where one
   // copy assigned a property and another did not, the older copy could win — so
   // the fix looked like it had not saved.
+  // Matched case-insensitively, because RULE MATCHING is case-insensitive.
+  // An exact comparison here let "Edf Energy" and "EDF ENERGY" become two
+  // rules that behave identically but can disagree about the category — and
+  // with both at the same priority, which one won was arbitrary. That is how
+  // 104 property utility payments ended up in the personal book.
   const { data: existing } = await supabase
     .from('money_category_rules')
     .select('id')
-    .eq('pattern', pattern)
+    .ilike('pattern', pattern)
     .eq('match_type', body.match_type)
     .maybeSingle()
 
