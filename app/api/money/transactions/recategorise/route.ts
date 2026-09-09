@@ -18,14 +18,25 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const onlyUncategorised = body.only_uncategorised === true
 
-  const [{ data: rules }, { data: txns }] = await Promise.all([
-    supabase.from('money_category_rules').select('*'),
-    (onlyUncategorised
-      ? supabase.from('money_transactions').select('*').is('category_id', null)
-      : supabase.from('money_transactions').select('*')),
-  ])
+  const { data: rules } = await supabase.from('money_category_rules').select('*')
 
-  const before = (txns ?? []) as MoneyTransaction[]
+  // Paged. PostgREST caps a select at 1000 rows, and this route silently
+  // stopped there: on 2,015 transactions it reported "examined: 1000" and left
+  // the rest untouched, which reads as "the rules do not match" rather than
+  // "half your ledger was never looked at".
+  const PAGE = 1000
+  const collected: MoneyTransaction[] = []
+  for (let offset = 0; ; offset += PAGE) {
+    const q = supabase.from('money_transactions').select('*')
+    const { data, error } = await (onlyUncategorised ? q.is('category_id', null) : q)
+      .order('txn_date', { ascending: false })
+      .range(offset, offset + PAGE - 1)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    collected.push(...((data ?? []) as MoneyTransaction[]))
+    if (!data || data.length < PAGE) break
+  }
+
+  const before = collected
   const after = applyRules(before, (rules ?? []) as MoneyCategoryRule[])
 
   let changed = 0
