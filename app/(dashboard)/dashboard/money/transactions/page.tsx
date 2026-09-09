@@ -30,6 +30,8 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState('')
   const [onlyUncategorised, setOnlyUncategorised] = useState(false)
   const [accountFilter, setAccountFilter] = useState('')
+  // '' = every transaction, 'none' = tagged to no property, otherwise an id.
+  const [propertyFilter, setPropertyFilter] = useState('')
 
   const load = useCallback(() => Promise.all([
     fetch('/api/money/transactions').then(r => r.json()),
@@ -177,9 +179,15 @@ export default function TransactionsPage() {
   const filtered = useMemo(() => txns.filter(t => {
     if (onlyUncategorised && t.category_id) return false
     if (accountFilter && t.account_id !== accountFilter) return false
+    if (propertyFilter) {
+      const pid = (t as MoneyTransaction & { property_id?: string | null }).property_id ?? null
+      // 'none' is the useful one: it finds the rows that belong to neither
+      // book, which are the ones holding the property P&L back.
+      if (propertyFilter === 'none' ? pid !== null : pid !== propertyFilter) return false
+    }
     if (search && !t.description.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }), [txns, onlyUncategorised, accountFilter, search])
+  }), [txns, onlyUncategorised, accountFilter, propertyFilter, search])
 
   const sorted = useMemo(
     () => sortTransactions(filtered, sort, { accounts, categories: cats, properties }),
@@ -225,6 +233,14 @@ export default function TransactionsPage() {
           <option value="">All accounts</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        {properties.length > 0 && (
+          <select style={input} value={propertyFilter}
+            onChange={e => setPropertyFilter(e.target.value)}>
+            <option value="">All properties</option>
+            {properties.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+            <option value="none">— no property —</option>
+          </select>
+        )}
         <label style={{ fontSize: 11, color: '#6b7280', display: 'flex', gap: 5, alignItems: 'center' }}>
           <input type="checkbox" checked={onlyUncategorised}
             onChange={e => setOnlyUncategorised(e.target.checked)} />
