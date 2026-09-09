@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import type { PropertyDetail } from '@/lib/money/property-detail'
 
@@ -21,18 +21,30 @@ function taxYearOptions(count = 6): string[] {
 export default function PropertyDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const years = taxYearOptions()
+  // Memoised: a fresh array each render would re-run the effect below on
+  // every render, snapping the selector back to the URL year each time the
+  // user chose a different one.
+  const years = useMemo(() => taxYearOptions(), [])
 
-  // The year arrives in the URL so a link to one property's P&L keeps its
-  // period. Landing without one, the portfolio page's own default applies.
-  const initial = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('tax_year')
-    : null
-
-  const [taxYear, setTaxYear] = useState(initial && years.includes(initial) ? initial : years[0])
+  const [taxYear, setTaxYear] = useState(years[0])
+  const [yearFromUrl, setYearFromUrl] = useState(false)
   const [d, setD] = useState<PropertyDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // The year arrives in the URL so a click from the portfolio keeps its period.
+  //
+  // Read in an effect, not in the useState initializer: this component is
+  // server-rendered first, where window does not exist, so the initializer
+  // always chose the default and hydration never revisited it — the link
+  // carried 2024/25 and the page showed 2026/27.
+  useEffect(() => {
+    // Once only. After this the selector owns the year.
+    if (yearFromUrl) return
+    const q = new URLSearchParams(window.location.search).get('tax_year')
+    if (q && years.includes(q)) setTaxYear(q)
+    setYearFromUrl(true)
+  }, [years, yearFromUrl])
 
   const load = useCallback((year: string) => {
     setLoading(true)
@@ -46,7 +58,11 @@ export default function PropertyDetailPage() {
       .catch(() => { setError('Could not load this property.'); setLoading(false) })
   }, [id])
 
-  useEffect(() => { void load(taxYear) }, [load, taxYear])
+  // Held until the URL has been read, so the first request is for the year
+  // actually asked for rather than the default followed by a second fetch.
+  useEffect(() => {
+    if (yearFromUrl) void load(taxYear)
+  }, [load, taxYear, yearFromUrl])
 
   const card: React.CSSProperties = {
     background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12,
