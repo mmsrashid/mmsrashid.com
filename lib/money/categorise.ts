@@ -7,17 +7,46 @@ export interface Categorisable {
   property_id?: string | null
 }
 
-function matches(rule: MoneyCategoryRule, description: string): boolean {
-  const d = description.toLowerCase()
-  const p = rule.pattern.toLowerCase()
+/**
+ * Flattens the two ways a bank description differs from what a human sees.
+ *
+ * Statement text is column-padded, so a description is really
+ * "Uber UBER   *TRIP           London        GBR". A pattern is almost always
+ * copied off the screen, where HTML collapses those runs to single spaces — so
+ * the pattern the user typed never appeared in the stored text and matched
+ * nothing. Four Uber rules matched 0 of 36 transactions this way, while a
+ * single-word "TFL" rule worked, which is the tell: only patterns containing a
+ * space were affected.
+ *
+ * Spacing around the '*' a card network inserts also varies within one
+ * merchant — "UBER   *EATS", "UBER   * EATS" and "UBER* EATS" all occur — so
+ * it is closed up too, letting one pattern cover every variant.
+ */
+function normalise(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\*\s*/g, '*')
+    .trim()
+}
 
-  if (rule.match_type === 'exact') return d.trim() === p.trim()
-  if (rule.match_type === 'contains') return d.includes(p)
+function matches(rule: MoneyCategoryRule, description: string): boolean {
+  if (rule.match_type === 'exact') {
+    return normalise(description) === normalise(rule.pattern)
+  }
+  if (rule.match_type === 'contains') {
+    return normalise(description).includes(normalise(rule.pattern))
+  }
 
   // A user-typed regex can be malformed. One bad rule must not abort an entire
   // import, so treat an invalid pattern as simply not matching.
+  //
+  // Tried against both forms: a regex written against the raw text keeps
+  // working, and one written from what the screen showed now works too. This
+  // only ever adds matches, never removes one.
   try {
-    return new RegExp(rule.pattern, 'i').test(description)
+    const re = new RegExp(rule.pattern, 'i')
+    return re.test(description) || re.test(normalise(description))
   } catch {
     return false
   }

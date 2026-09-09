@@ -85,7 +85,19 @@ export default function TransactionsPage() {
       ? properties.find(p => p.id === propertyId)?.code ?? null
       : null
 
-    const suggested = t.description.split(/\s{2,}|,/)[0].trim().slice(0, 40)
+    // Suggest merchant plus card reference, not merchant alone.
+    //
+    // Statement text is column-padded: "Uber Eats  UBER   *EATS  London  GBR".
+    // Taking only the first padded segment suggested a bare "Uber", which also
+    // catches Uber Eats — so the two could never be separated, and typing a
+    // longer pattern by hand failed because the padding is invisible on screen.
+    // The reference segment is included when it carries a '*', which is what
+    // card networks put there and what distinguishes *TRIP from *EATS.
+    const segments = t.description.split(/\s{2,}|,/).map(x => x.trim()).filter(Boolean)
+    const head = segments[0] ?? t.description.trim()
+    const suggested = (segments[1]?.includes('*') ? `${head} ${segments[1]}` : head)
+      .replace(/\s+/g, ' ')
+      .slice(0, 60)
     const pattern = prompt(
       propertyCode
         ? `Any transaction containing this text will get that category and be assigned to ${propertyCode}:`

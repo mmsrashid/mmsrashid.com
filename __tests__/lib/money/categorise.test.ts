@@ -141,6 +141,80 @@ describe('applyRules', () => {
     expect(r[0]).toMatchObject({ category_id: 'x', category_source: 'manual', property_id: 'p' })
   })
 
+  describe('column-padded bank descriptions', () => {
+    // Verbatim from real Starling data. The padding is the point: a pattern is
+    // copied off the screen, where HTML collapses these runs to one space.
+    const TRIP = 'Uber UBER   *TRIP           London        GBR'
+    const EATS = 'Uber Eats UBER   *EATS           London        GBR'
+    const EATS_PENDING = 'Uber Eats UBER   * EATS PENDING  London        GBR'
+    const EATS_NOSPACE = 'Uber Eats UBER* EATS PENDING     LONDON        GBR'
+    const PENDING = 'Uber UBER   * PENDING       London        GBR'
+
+    it('matches a pattern typed with single spaces', () => {
+      // This is the reported bug: four such rules matched 0 of 36 rows.
+      const r = applyRules([txn(TRIP)], [rule({ pattern: 'Uber UBER *TRIP', category_id: 'taxis' })])
+      expect(r[0].category_id).toBe('taxis')
+    })
+
+    it('matches regardless of spacing around the card asterisk', () => {
+      // One merchant produces "UBER   *EATS", "UBER   * EATS" and "UBER* EATS",
+      // so no literal pattern could cover all three before.
+      for (const d of [EATS, EATS_PENDING, EATS_NOSPACE]) {
+        const r = applyRules([txn(d)], [rule({ pattern: 'UBER*EATS', category_id: 'eating-out' })])
+        expect(r[0].category_id).toBe('eating-out')
+      }
+    })
+
+    it('still tells Uber Eats apart from an Uber trip', () => {
+      // Being more forgiving must not make everything match everything.
+      const rules = [
+        rule({ pattern: 'UBER*EATS', category_id: 'eating-out', priority: 50 }),
+        rule({ pattern: 'UBER*TRIP', category_id: 'taxis', priority: 50 }),
+      ]
+      expect(applyRules([txn(EATS)], rules)[0].category_id).toBe('eating-out')
+      expect(applyRules([txn(EATS_PENDING)], rules)[0].category_id).toBe('eating-out')
+      expect(applyRules([txn(TRIP)], rules)[0].category_id).toBe('taxis')
+    })
+
+    it('lets a specific rule win by priority over a broader one', () => {
+      // 'UBER' contains-matches an Eats row too, so the narrower rule needs the
+      // lower priority number. Order in the array must not decide it.
+      const rules = [
+        rule({ pattern: 'UBER', category_id: 'taxis', priority: 100 }),
+        rule({ pattern: 'UBER*EATS', category_id: 'eating-out', priority: 50 }),
+      ]
+      expect(applyRules([txn(EATS)], rules)[0].category_id).toBe('eating-out')
+      expect(applyRules([txn(TRIP)], rules)[0].category_id).toBe('taxis')
+      expect(applyRules([txn(PENDING)], rules)[0].category_id).toBe('taxis')
+    })
+
+    it('does not match a pattern that is genuinely absent', () => {
+      const r = applyRules([txn(TRIP)], [rule({ pattern: 'DELIVEROO', category_id: 'x' })])
+      expect(r[0].category_id).toBeNull()
+    })
+
+    it('applies the same normalisation to exact matches', () => {
+      const r = applyRules([txn(TRIP)], [
+        rule({ pattern: 'Uber UBER *TRIP London GBR', category_id: 'taxis', match_type: 'exact' }),
+      ])
+      expect(r[0].category_id).toBe('taxis')
+    })
+
+    it('keeps a regex written against the raw padding working', () => {
+      const r = applyRules([txn(TRIP)], [
+        rule({ pattern: 'UBER\\s+\\*TRIP', category_id: 'taxis', match_type: 'regex' }),
+      ])
+      expect(r[0].category_id).toBe('taxis')
+    })
+
+    it('also accepts a regex written from what the screen showed', () => {
+      const r = applyRules([txn(TRIP)], [
+        rule({ pattern: '^uber uber\\*trip', category_id: 'taxis', match_type: 'regex' }),
+      ])
+      expect(r[0].category_id).toBe('taxis')
+    })
+  })
+
   describe('duplicate rules for the same merchant', () => {
     // Taken from real data: pressing Rule twice on the same merchant left an
     // older property-less rule alongside a newer one carrying 4FLH. Both at
