@@ -1,6 +1,9 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import CategoryPicker from '@/components/money/CategoryPicker'
+import {
+  sortTransactions, nextSort, type Sort, type SortKey,
+} from '@/lib/money/sort-transactions'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
 import type { MoneyProperty } from '@/lib/money/property-types'
 import type { MoneyAccount } from '@/lib/money/types'
@@ -17,6 +20,8 @@ export default function TransactionsPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [categorising, setCategorising] = useState(false)
+
+  const [sort, setSort] = useState<Sort>({ key: 'date', dir: 'desc' })
 
   const [search, setSearch] = useState('')
   const [onlyUncategorised, setOnlyUncategorised] = useState(false)
@@ -155,6 +160,13 @@ export default function TransactionsPage() {
     return true
   }), [txns, onlyUncategorised, accountFilter, search])
 
+  const sorted = useMemo(
+    () => sortTransactions(filtered, sort, { accounts, categories: cats, properties }),
+    [filtered, sort, accounts, cats, properties],
+  )
+
+  const sortBy = (key: SortKey) => setSort(s => nextSort(s, key))
+
   if (loading) return <div style={{ padding: 40, fontSize: 12, color: '#9ca3af' }}>Loading…</div>
   if (txns.length === 0) return (
     <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: '#6b7280' }}>
@@ -169,6 +181,16 @@ export default function TransactionsPage() {
     padding: '8px 12px', borderBottom: '1px solid #f9fafb', fontSize: 12,
   }
   const nameOf = (id: string) => accounts.find(a => a.id === id)?.name ?? '—'
+
+  const columns: [string, SortKey | null][] = [
+    ['Date', 'date'],
+    ['Description', 'description'],
+    ['Account', 'account'],
+    ['Amount', 'amount'],
+    ['Category', 'category'],
+    ...(properties.length ? [['Property', 'property'] as [string, SortKey]] : []),
+    ['', null],
+  ]
 
   return (
     <div style={{ padding: '20px 22px' }}>
@@ -203,17 +225,33 @@ export default function TransactionsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {['Date', 'Description', 'Account', 'Amount', 'Category', ...(properties.length ? ['Property'] : []), ''].map(h => (
-                <th key={h} style={{
-                  textAlign: h === 'Amount' ? 'right' : 'left', padding: '8px 12px',
-                  background: '#fafafa', color: '#9ca3af', fontWeight: 600, fontSize: 11,
-                  borderBottom: '1px solid #f3f4f6',
-                }}>{h}</th>
-              ))}
+              {columns.map(([label, key]) => {
+                const active = key !== null && sort.key === key
+                return (
+                  <th key={label} onClick={key ? () => sortBy(key) : undefined}
+                    title={key ? `Sort by ${label.toLowerCase()}` : undefined}
+                    style={{
+                      textAlign: label === 'Amount' ? 'right' : 'left', padding: '8px 12px',
+                      background: '#fafafa', fontWeight: 600, fontSize: 11,
+                      borderBottom: '1px solid #f3f4f6',
+                      color: active ? '#111' : '#9ca3af',
+                      cursor: key ? 'pointer' : 'default',
+                      userSelect: 'none', whiteSpace: 'nowrap',
+                    }}>
+                    {label}
+                    {/* The arrow shows on the sorted column only, so the header
+                        row says what the order actually is rather than leaving
+                        it to be inferred from the rows. */}
+                    {active && (
+                      <span style={{ marginLeft: 4 }}>{sort.dir === 'asc' ? '\u25b2' : '\u25bc'}</span>
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {filtered.slice(0, 500).map(t => (
+            {sorted.slice(0, 500).map(t => (
               <tr key={t.id}>
                 <td style={cell}>{t.txn_date}</td>
                 <td style={{
@@ -269,8 +307,8 @@ export default function TransactionsPage() {
       </div>
       {filtered.length > 500 && (
         <p style={{ fontSize: 10, color: '#9ca3af', marginTop: 8 }}>
-          Showing the first 500 of {filtered.length}. Narrow the filters to see the rest — nothing has
-          been deleted.
+          Showing the first 500 of {filtered.length}, in the order you sorted them. Narrow the
+          filters or sort the other way to see the rest — nothing has been deleted.
         </p>
       )}
     </div>
