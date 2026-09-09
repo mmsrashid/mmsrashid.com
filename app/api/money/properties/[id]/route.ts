@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { OWNERSHIP_KINDS, PROPERTY_STATUSES } from '@/lib/money/property-types'
+import { LOCATION_KINDS, OWNERSHIP_KINDS, PROPERTY_STATUSES } from '@/lib/money/property-types'
 import { localToday } from '@/lib/local-date'
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -17,6 +17,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (!code) return NextResponse.json({ error: 'Code cannot be empty.' }, { status: 400 })
     patch.code = code
   }
+  if (body.kind !== undefined) {
+    if (!LOCATION_KINDS.includes(body.kind)) {
+      return NextResponse.json(
+        { error: `kind must be one of: ${LOCATION_KINDS.join(', ')}` },
+        { status: 400 },
+      )
+    }
+    patch.kind = body.kind
+  }
+
   if (body.ownership !== undefined) {
     if (!OWNERSHIP_KINDS.includes(body.ownership)) {
       return NextResponse.json({ error: `ownership must be one of: ${OWNERSHIP_KINDS.join(', ')}` }, { status: 400 })

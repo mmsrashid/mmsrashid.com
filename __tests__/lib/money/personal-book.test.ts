@@ -200,3 +200,70 @@ describe('monthEnd', () => {
     expect(pl.taxYearPeriod.from).toBe('2025-04-06')
   })
 })
+
+describe('locations that are people', () => {
+  const LOCATIONS = [
+    { id: 'p1', kind: 'property' },
+    { id: 'sara', kind: 'person' },
+    { id: 'legacy' },  // written before migration 019: reads as a property
+  ]
+
+  it('keeps a person-tagged payment in the personal book', () => {
+    // Paying Sara is personal spending attributed to her. Treating any location
+    // as a property would drop every family payment out of the personal P&L.
+    const pl = buildPersonalPL([
+      txn({ amount: -200, category_id: 'groceries', property_id: 'sara' }),
+      txn({ amount: -100, category_id: 'groceries' }),
+    ], CATS, ACCOUNTS, '2025-06', LOCATIONS)
+
+    expect(pl.month.totalOut).toBe(300)
+    expect(pl.propertyRowCount).toBe(0)
+  })
+
+  it('still excludes a property-tagged payment', () => {
+    const pl = buildPersonalPL([
+      txn({ amount: -900, category_id: 'groceries', property_id: 'p1' }),
+      txn({ amount: -100, category_id: 'groceries' }),
+    ], CATS, ACCOUNTS, '2025-06', LOCATIONS)
+
+    expect(pl.month.totalOut).toBe(100)
+    expect(pl.propertyRowCount).toBe(1)
+  })
+
+  it('treats a location with no kind as a property', () => {
+    const pl = buildPersonalPL([
+      txn({ amount: -900, category_id: 'groceries', property_id: 'legacy' }),
+    ], CATS, ACCOUNTS, '2025-06', LOCATIONS)
+    expect(pl.month.totalOut).toBe(0)
+    expect(pl.propertyRowCount).toBe(1)
+  })
+
+  it('falls back to the old rule when no locations are supplied', () => {
+    // Safer than sweeping the entire property book into the personal one
+    // because a caller forgot to pass them.
+    const pl = buildPersonalPL([
+      txn({ amount: -900, category_id: 'groceries', property_id: 'sara' }),
+    ], CATS, ACCOUNTS, '2025-06')
+    expect(pl.month.totalOut).toBe(0)
+    expect(pl.propertyRowCount).toBe(1)
+  })
+
+  it('holds a property-category row tagged to a person for review', () => {
+    // Rent received attributed to a person cannot enter the property P&L —
+    // there is no property — and must not quietly enter the personal one as
+    // income either. It is contradictory data, so it is surfaced rather than
+    // absorbed by whichever book would take it.
+    const pl = buildPersonalPL([
+      txn({ amount: 1500, category_id: 'rent-in', property_id: 'sara' }),
+    ], CATS, ACCOUNTS, '2025-06', LOCATIONS)
+    expect(pl.heldForReviewCount).toBe(1)
+    expect(pl.month.totalIn).toBe(0)
+  })
+
+  it('still holds an untagged property-category row for review', () => {
+    const pl = buildPersonalPL([
+      txn({ amount: 1500, category_id: 'rent-in' }),
+    ], CATS, ACCOUNTS, '2025-06', LOCATIONS)
+    expect(pl.heldForReviewCount).toBe(1)
+  })
+})

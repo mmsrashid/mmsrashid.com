@@ -12,9 +12,15 @@ type TransactionWithProperty = MoneyTransaction & { property_id?: string | null 
  * The personal book and the property book are separate sets of accounts that
  * happen to share bank accounts. This module owns the boundary between them.
  *
- * A transaction belongs to the property book when the user has tagged it to a
- * property. Nothing else decides it: the tag is a deliberate act, and the user
- * is the one who knows whether a payment was for a flat or for themselves.
+ * A transaction belongs to the property book when its location is a PROPERTY.
+ * Nothing else decides it: the tag is a deliberate act, and the user is the one
+ * who knows whether a payment was for a flat or for themselves.
+ *
+ * A location can also be a person. Tagging a payment to someone keeps it in the
+ * personal book — paying Sara is personal spending attributed to her, not
+ * property income or expense — so the boundary is the location's kind, not the
+ * mere presence of one. Getting this wrong would move every family payment out
+ * of the personal P&L the moment it was attributed.
  *
  * A transaction carrying a property CATEGORY but no tag belongs to neither
  * book. It is a half-finished decision — "this is a property expense" without
@@ -26,10 +32,28 @@ type TransactionWithProperty = MoneyTransaction & { property_id?: string | null 
 export function isPersonalRow(
   txn: TransactionWithProperty,
   treatmentOf: ReadonlyMap<string, PropertyTreatment | null>,
+  /**
+   * Ids of locations that are properties. Omit it and every location is treated
+   * as a property, which is the pre-locations behaviour.
+   */
+  propertyLocationIds?: ReadonlySet<string>,
 ): boolean {
-  if (txn.property_id) return false
+  if (txn.property_id) {
+    const isProperty = propertyLocationIds
+      ? propertyLocationIds.has(txn.property_id)
+      : true
+    if (isProperty) return false
+  }
   const treatment = txn.category_id ? treatmentOf.get(txn.category_id) ?? null : null
   return treatment === null
+}
+
+/** Ids of the locations that are properties. */
+export function propertyLocationIds(
+  locations: { id: string; kind?: string | null }[],
+): Set<string> {
+  // A row written before migration 019 has no kind and is a property.
+  return new Set(locations.filter(l => (l.kind ?? 'property') === 'property').map(l => l.id))
 }
 
 export function treatmentMap(
@@ -77,13 +101,22 @@ export function buildPersonalPL(
   categories: CategoryWithTreatment[],
   accounts: MoneyAccount[],
   month: string,
+  /** Locations, so a person-tagged row stays personal. */
+  locations: { id: string; kind?: string | null }[] = [],
 ): PersonalPL {
   const treatmentOf = treatmentMap(categories)
+  const propertyIds = propertyLocationIds(locations)
+  // With no locations supplied nothing can be identified as a property, so fall
+  // back to the old rule rather than sweeping the whole property book into the
+  // personal one.
+  const propsKnown = locations.length > 0 ? propertyIds : undefined
 
-  const personal = transactions.filter(t => isPersonalRow(t, treatmentOf))
-  const propertyRows = transactions.filter(t => t.property_id)
+  const personal = transactions.filter(t => isPersonalRow(t, treatmentOf, propsKnown))
+  const isPropertyTagged = (t: TransactionWithProperty) =>
+    !!t.property_id && (propsKnown ? propsKnown.has(t.property_id) : true)
+  const propertyRows = transactions.filter(isPropertyTagged)
   const held = transactions.filter(t => {
-    if (t.property_id) return false
+    if (isPropertyTagged(t)) return false
     const treatment = t.category_id ? treatmentOf.get(t.category_id) ?? null : null
     return treatment !== null
   })

@@ -8,7 +8,9 @@ import {
 import type {
   MoneyCategory, MoneyCategoryRule, MoneyTransaction,
 } from '@/lib/money/spending-types'
-import type { MoneyProperty } from '@/lib/money/property-types'
+import {
+  LOCATION_KINDS, LOCATION_KIND_LABEL, type MoneyProperty,
+} from '@/lib/money/property-types'
 import type { MoneyAccount } from '@/lib/money/types'
 
 const money = (n: number) =>
@@ -217,7 +219,7 @@ export default function TransactionsPage() {
     ['Account', 'account'],
     ['Amount', 'amount'],
     ['Category', 'category'],
-    ...(properties.length ? [['Property', 'property'] as [string, SortKey]] : []),
+    ...(properties.length ? [['Location', 'property'] as [string, SortKey]] : []),
     ['', null],
   ]
 
@@ -236,9 +238,16 @@ export default function TransactionsPage() {
         {properties.length > 0 && (
           <select style={input} value={propertyFilter}
             onChange={e => setPropertyFilter(e.target.value)}>
-            <option value="">All properties</option>
-            {properties.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
-            <option value="none">— no property —</option>
+            <option value="">All locations</option>
+            {LOCATION_KINDS.map(k => {
+              const group = properties.filter(p => (p.kind ?? 'property') === k)
+              return group.length === 0 ? null : (
+                <optgroup key={k} label={LOCATION_KIND_LABEL[k]}>
+                  {group.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+                </optgroup>
+              )
+            })}
+            <option value="none">— no location —</option>
           </select>
         )}
         <label style={{ fontSize: 11, color: '#6b7280', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -324,9 +333,20 @@ export default function TransactionsPage() {
                       style={{ ...input, padding: '3px 6px', fontSize: 11 }}
                     >
                       <option value="">—</option>
-                      {properties.map(p => (
-                        <option key={p.id} value={p.id}>{p.code}</option>
-                      ))}
+                      {/* Grouped, so people and properties are distinguishable
+                          at a glance — they behave differently: a property tag
+                          moves the row into the property book, a person tag
+                          does not. */}
+                      {LOCATION_KINDS.map(k => {
+                        const group = properties.filter(p => (p.kind ?? 'property') === k)
+                        return group.length === 0 ? null : (
+                          <optgroup key={k} label={LOCATION_KIND_LABEL[k]}>
+                            {group.map(p => (
+                              <option key={p.id} value={p.id}>{p.code}</option>
+                            ))}
+                          </optgroup>
+                        )
+                      })}
                     </select>
                   </td>
                 )}

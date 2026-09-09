@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from 'react'
 import PropertyPLTable from '@/components/money/PropertyPLTable'
 import type { PropertyPL } from '@/lib/money/property-pl'
 import { latestTaxYearWithActivity } from '@/lib/money/property-pl'
-import type { MoneyProperty } from '@/lib/money/property-types'
+import {
+  LOCATION_KINDS, LOCATION_KIND_LABEL, type LocationKind, type MoneyProperty,
+} from '@/lib/money/property-types'
 
 /** Tax years run 6 April to 5 April, so the label is a straddling pair. */
 function taxYearOptions(count = 6): string[] {
@@ -27,6 +29,7 @@ export default function PropertyPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const [kind, setKind] = useState<LocationKind>('property')
   const [code, setCode] = useState('')
   const [label, setLabel] = useState('')
   const [share, setShare] = useState('100')
@@ -75,11 +78,16 @@ export default function PropertyPage() {
     setError('')
     const res = await fetch('/api/money/properties', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, label, share_percent: Number(share) || 100 }),
+      body: JSON.stringify({
+        code, label, kind,
+        // Share is an ownership fraction. It means nothing for a person, and
+        // the API ignores it for anything but a property.
+        share_percent: kind === 'property' ? Number(share) || 100 : 100,
+      }),
     })
     const d = await res.json()
     if (!res.ok) return setError(d.error || 'Could not add that property.')
-    setCode(''); setLabel(''); setShare('100')
+    setCode(''); setLabel(''); setShare('100'); setKind('property')
     await load(taxYear)
   }
 
@@ -218,8 +226,22 @@ export default function PropertyPage() {
 
       {properties.length > 0 && (
         <div style={card}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Manage properties</h3>
-          {properties.map(p => (
+          <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Locations</h3>
+          <p style={{ fontSize: 10, color: '#9ca3af', marginBottom: 10 }}>
+            A transaction has a category and a location. A location can be a property or a person
+            — only properties appear in the P&amp;L above, and a payment tagged to a person stays
+            in your personal book.
+          </p>
+          {/* Sorted by kind then code, with the kind shown on each row. Group
+              headings were tried and read worse: the badge is already on the
+              row, so the heading only repeated it. */}
+          {[...properties]
+            .sort((a, b) => {
+              const ka = LOCATION_KINDS.indexOf(a.kind ?? 'property')
+              const kb = LOCATION_KINDS.indexOf(b.kind ?? 'property')
+              return ka - kb || a.code.localeCompare(b.code)
+            })
+            .map(p => (
             <div key={p.id} style={{ padding: '9px 0', borderBottom: '1px solid #f9fafb' }}>
               {editing === p.id ? (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -239,10 +261,18 @@ export default function PropertyPage() {
               ) : (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <div style={{ flex: 1, minWidth: 170 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{p.code}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+                      {p.code}
+                      <span style={{
+                        fontSize: 9, fontWeight: 600, marginLeft: 6, padding: '1px 5px',
+                        borderRadius: 4, color: '#6b7280', background: '#f3f4f6',
+                      }}>{LOCATION_KIND_LABEL[p.kind ?? 'property']}</span>
+                    </div>
                     <div style={{ fontSize: 10, color: '#9ca3af' }}>
                       {p.label ? `${p.label} · ` : ''}
-                      {p.share_percent < 100 ? `${p.share_percent}% share` : 'sole owner'}
+                      {(p.kind ?? 'property') === 'property'
+                        ? (p.share_percent < 100 ? `${p.share_percent}% share` : 'sole owner')
+                        : 'personal book'}
                       {p.status === 'sold' ? ` · sold ${p.disposed_date ?? ''}` : ''}
                     </div>
                   </div>
@@ -269,21 +299,36 @@ export default function PropertyPage() {
       )}
 
       <div style={card}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Add a property</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Add a location</h3>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input style={{ ...input, width: 110 }} placeholder="Code, e.g. 4FLH"
+          <select style={{ ...input, width: 110 }} value={kind}
+            onChange={e => setKind(e.target.value as LocationKind)}>
+            {LOCATION_KINDS.map(k => (
+              <option key={k} value={k}>{LOCATION_KIND_LABEL[k]}</option>
+            ))}
+          </select>
+          <input style={{ ...input, width: 140 }}
+            placeholder={kind === 'property' ? 'Code, e.g. 4FLH' : 'Name'}
             value={code} onChange={e => setCode(e.target.value)} />
-          <input style={input} placeholder="Address or label (optional)"
+          <input style={input}
+            placeholder={kind === 'property' ? 'Address or label (optional)' : 'Note (optional)'}
             value={label} onChange={e => setLabel(e.target.value)} />
-          <input style={{ ...input, width: 110 }} placeholder="Share %"
-            value={share} onChange={e => setShare(e.target.value)} />
+          {/* Share is hidden for a person: it is an ownership fraction and has
+              no meaning for one, so offering the field would invite a value
+              that silently does nothing. */}
+          {kind === 'property' && (
+            <input style={{ ...input, width: 110 }} placeholder="Share %"
+              value={share} onChange={e => setShare(e.target.value)} />
+          )}
           <button onClick={addProperty} disabled={!code.trim()}
             style={{ ...input, background: '#111', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
             Add
           </button>
         </div>
         <p style={{ fontSize: 10, color: '#9ca3af', marginTop: 8 }}>
-          Share matters for jointly held property — at 50% every figure reports your half.
+          {kind === 'property'
+            ? 'Share matters for jointly held property — at 50% every figure reports your half.'
+            : 'A person is a location for attributing your own spending. It stays in the personal book and never appears in the property P&L.'}
         </p>
       </div>
 

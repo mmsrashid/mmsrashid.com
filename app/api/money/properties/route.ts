@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { OWNERSHIP_KINDS } from '@/lib/money/property-types'
+import { LOCATION_KINDS, OWNERSHIP_KINDS } from '@/lib/money/property-types'
 
 export async function GET() {
   const supabase = await createClient()
@@ -22,7 +22,15 @@ export async function POST(req: Request) {
 
   const body = await req.json()
   const code = String(body.code ?? '').trim()
-  if (!code) return NextResponse.json({ error: 'A property code is required.' }, { status: 400 })
+  if (!code) return NextResponse.json({ error: 'A code or name is required.' }, { status: 400 })
+
+  const kind = body.kind ?? 'property'
+  if (!LOCATION_KINDS.includes(kind)) {
+    return NextResponse.json(
+      { error: `kind must be one of: ${LOCATION_KINDS.join(', ')}` },
+      { status: 400 },
+    )
+  }
 
   if (body.ownership !== undefined && !OWNERSHIP_KINDS.includes(body.ownership)) {
     return NextResponse.json(
@@ -33,7 +41,9 @@ export async function POST(req: Request) {
 
   // Share drives every figure in the P&L, so a nonsensical value would corrupt
   // the whole report rather than just one field.
-  const share = body.share_percent === undefined ? 100 : Number(body.share_percent)
+  const share = body.share_percent === undefined || kind !== 'property'
+    ? 100
+    : Number(body.share_percent)
   if (!Number.isFinite(share) || share <= 0 || share > 100) {
     return NextResponse.json(
       { error: 'share_percent must be greater than 0 and at most 100.' },
@@ -46,6 +56,7 @@ export async function POST(req: Request) {
     .insert({
       user_id: user.id,
       code,
+      kind,
       label: body.label || null,
       ownership: body.ownership || 'personal',
       share_percent: share,

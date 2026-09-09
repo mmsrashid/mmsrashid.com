@@ -63,8 +63,14 @@ export async function GET(req: Request) {
     supabase.from('money_accounts').select('*'),
   ])
 
+  // Properties only. A person is a location too, but a person has no rent,
+  // no mortgage interest and no Section 24 position — listing one here would
+  // put a row of zeroes in a tax report.
+  const onlyProperties = ((properties ?? []) as MoneyProperty[])
+    .filter(p => (p.kind ?? 'property') === 'property')
+
   const pl = buildPropertyPL(
-    (properties ?? []) as MoneyProperty[],
+    onlyProperties,
     txns,
     (categories ?? []) as MoneyCategory[],
     (accounts ?? []) as MoneyAccount[],

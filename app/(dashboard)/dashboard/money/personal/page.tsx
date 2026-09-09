@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import SpendingByCategory from '@/components/money/SpendingByCategory'
 import CategoryTrend, { type TrendPoint } from '@/components/money/CategoryTrend'
 import CategoryManager from '@/components/money/CategoryManager'
-import { buildPersonalPL, isPersonalRow, treatmentMap } from '@/lib/money/personal-book'
+import {
+  buildPersonalPL, isPersonalRow, treatmentMap, propertyLocationIds,
+} from '@/lib/money/personal-book'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
+import type { MoneyProperty } from '@/lib/money/property-types'
 import type { MoneyAccount } from '@/lib/money/types'
 
 const money = (n: number) =>
@@ -16,6 +19,7 @@ export default function PersonalPage() {
   const [txns, setTxns] = useState<MoneyTransaction[]>([])
   const [cats, setCats] = useState<MoneyCategory[]>([])
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
+  const [locations, setLocations] = useState<MoneyProperty[]>([])
   const [month, setMonth] = useState(thisMonth())
   const [loading, setLoading] = useState(true)
 
@@ -24,11 +28,13 @@ export default function PersonalPage() {
       fetch('/api/money/transactions').then(r => r.json()),
       fetch('/api/money/categories').then(r => r.json()),
       fetch('/api/money/accounts').then(r => r.json()),
-    ]).then(([t, c, a]) => {
+      fetch('/api/money/properties').then(r => r.json()).catch(() => []),
+    ]).then(([t, c, a, l]) => {
       const rows: MoneyTransaction[] = Array.isArray(t) ? t : []
       setTxns(rows)
       setCats(Array.isArray(c) ? c : [])
       setAccounts(Array.isArray(a) ? a : [])
+      setLocations(Array.isArray(l) ? l : [])
       // Open on the most recent month that has PERSONAL activity.
       //
       // Defaulting to the calendar month shows a page of zeros whenever the
@@ -37,8 +43,9 @@ export default function PersonalPage() {
       // the newest month held only property transactions, so the personal book
       // opened empty and looked broken.
       const treatments = treatmentMap(Array.isArray(c) ? c : [])
+      const propIds = propertyLocationIds(Array.isArray(l) ? l : [])
       const personalMonths = rows
-        .filter(r => isPersonalRow(r, treatments))
+        .filter(r => isPersonalRow(r, treatments, propIds))
         .map(r => r.txn_date.slice(0, 7))
         .sort()
       const latest = personalMonths.pop() ?? rows.map(r => r.txn_date.slice(0, 7)).sort().pop()
@@ -57,8 +64,8 @@ export default function PersonalPage() {
   )
 
   const pl = useMemo(
-    () => buildPersonalPL(txns, cats, accounts, month),
-    [txns, cats, accounts, month],
+    () => buildPersonalPL(txns, cats, accounts, month, locations),
+    [txns, cats, accounts, month, locations],
   )
   const summary = pl.month
 
@@ -67,9 +74,9 @@ export default function PersonalPage() {
       month: m,
       // Personal only, like the cards above it. Using the combined figure here
       // would draw a chart that disagrees with the total beside it.
-      total: buildPersonalPL(txns, cats, accounts, m).month.totalOut,
+      total: buildPersonalPL(txns, cats, accounts, m, locations).month.totalOut,
     })),
-    [months, txns, cats, accounts],
+    [months, txns, cats, accounts, locations],
   )
 
   if (loading) return <div style={{ padding: 40, fontSize: 12, color: '#9ca3af' }}>Loading…</div>
@@ -94,8 +101,9 @@ export default function PersonalPage() {
       <div style={{ marginBottom: 10 }}>
         <h2 style={{ fontSize: 15, fontWeight: 800 }}>Personal P&amp;L</h2>
         <p style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
-          Your own money only. Anything tagged to a property is kept out and reported on the{' '}
-          <strong>Property</strong> tab — the two are separate books.
+          Your own money only. Anything whose location is a <strong>property</strong> is kept out
+          and reported on the <strong>Property</strong> tab — the two are separate books. A payment
+          tagged to a <strong>person</strong> stays here, attributed to them.
         </p>
       </div>
 

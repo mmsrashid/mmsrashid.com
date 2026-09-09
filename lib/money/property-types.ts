@@ -25,9 +25,29 @@ export const PROPERTY_TREATMENT_LABEL: Record<PropertyTreatment, string> = {
   non_allowable: 'Not allowable',
 }
 
+/**
+ * What a location is.
+ *
+ * The second dimension on a transaction answers "who or what was this for", and
+ * a property is only one kind of answer — a payment can belong to a person.
+ * Only `property` reaches the property P&L; a person-tagged transaction stays
+ * in the personal book, because paying someone is personal spending attributed
+ * to them, not property income or expense.
+ */
+export const LOCATION_KINDS = ['property', 'person', 'other'] as const
+export type LocationKind = (typeof LOCATION_KINDS)[number]
+
+export const LOCATION_KIND_LABEL: Record<LocationKind, string> = {
+  property: 'Property',
+  person: 'Person',
+  other: 'Other',
+}
+
 export interface MoneyProperty {
   id: string
   user_id: string
+  /** Present on every row once migration 019 has run; older rows read as property. */
+  kind?: LocationKind
   code: string
   label: string | null
   ownership: OwnershipKind

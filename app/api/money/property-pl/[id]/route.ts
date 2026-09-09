@@ -30,6 +30,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const { data: property } = await supabase
     .from('money_properties').select('*').eq('id', id).maybeSingle()
   if (!property) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if ((property.kind ?? 'property') !== 'property') {
+    return NextResponse.json(
+      { error: 'That location is not a property, so it has no property P&L.' },
+      { status: 400 },
+    )
+  }
 
   // Every row for this property, with no date bound.
   //
