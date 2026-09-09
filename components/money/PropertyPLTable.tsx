@@ -1,4 +1,5 @@
 'use client'
+import { useRouter } from 'next/navigation'
 import type { PropertyPL } from '@/lib/money/property-pl'
 
 const gbp = (n: number) =>
@@ -12,10 +13,21 @@ const gbp = (n: number) =>
  * showing only one would be confidently wrong for whichever purpose the reader
  * actually had.
  */
-export default function PropertyPLTable({ pl }: { pl: PropertyPL }) {
+export default function PropertyPLTable(
+  { pl, taxYear }: { pl: PropertyPL; taxYear?: string },
+) {
+  const router = useRouter()
+
   if (pl.perProperty.length === 0) {
     return <p style={{ fontSize: 12, color: '#9ca3af' }}>No properties on record yet.</p>
   }
+
+  // The period travels with the click, so the property's own page opens on the
+  // year being looked at rather than resetting to a default.
+  const open = (propertyId: string) => router.push(
+    `/dashboard/money/property/${propertyId}` +
+    (taxYear ? `?tax_year=${encodeURIComponent(taxYear)}` : ''),
+  )
 
   const th: React.CSSProperties = {
     padding: '8px 10px', background: '#fafafa', color: '#9ca3af',
@@ -46,9 +58,12 @@ export default function PropertyPLTable({ pl }: { pl: PropertyPL }) {
         </thead>
         <tbody>
           {pl.perProperty.map(r => (
-            <tr key={r.propertyId}>
+            <tr key={r.propertyId}
+              onClick={() => open(r.propertyId)}
+              title={`Open ${r.code}'s own P&L`}
+              style={{ cursor: 'pointer' }}>
               <td style={{ ...td, textAlign: 'left' }}>
-                <div style={{ fontWeight: 700 }}>{r.code}</div>
+                <div style={{ fontWeight: 700, color: '#1d4ed8' }}>{r.code} →</div>
                 <div style={{ fontSize: 10, color: '#9ca3af' }}>
                   {r.label ? `${r.label} · ` : ''}
                   {r.sharePercent < 100 ? `${r.sharePercent}% share` : 'sole owner'}

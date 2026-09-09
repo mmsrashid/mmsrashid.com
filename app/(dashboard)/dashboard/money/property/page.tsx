@@ -212,7 +212,7 @@ export default function PropertyPage() {
           <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
             Profit and loss by property
           </h3>
-          {pl && <PropertyPLTable pl={pl} />}
+          {pl && <PropertyPLTable pl={pl} taxYear={taxYear} />}
         </div>
       )}
 
