@@ -7,7 +7,7 @@ import type { ExtractedBalance, MoneyAccount } from '@/lib/money/types'
 
 const TABS = [
   { label: 'Overview', icon: '📊', href: '/dashboard/money/overview' },
-  { label: 'Spending', icon: '🧾', href: '/dashboard/money/spending' },
+  { label: 'Personal', icon: '🧾', href: '/dashboard/money/personal' },
   { label: 'Transactions', icon: '📃', href: '/dashboard/money/transactions' },
   { label: 'Property', icon: '🏘️', href: '/dashboard/money/property' },
   { label: 'Accounts', icon: '🏦', href: '/dashboard/money/accounts' },

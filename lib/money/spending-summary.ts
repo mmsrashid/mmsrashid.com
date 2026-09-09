@@ -40,6 +40,12 @@ export function buildSpendingSummary(
   categories: MoneyCategory[],
   accounts: MoneyAccount[],
   month: string,
+  /**
+   * Optional explicit window, inclusive, as YYYY-MM-DD. When given it replaces
+   * the month filter, so a year-to-date total reuses this aggregation rather
+   * than duplicating it. `month` is still echoed in the result for labelling.
+   */
+  range?: { from: string; to: string },
 ): SpendingSummary {
   const empty: SpendingSummary = {
     month, totalOut: 0, totalIn: 0, net: 0, byCategory: [],
@@ -47,7 +53,9 @@ export function buildSpendingSummary(
     currencyWarning: null,
   }
 
-  const inMonth = transactions.filter(t => t.txn_date.slice(0, 7) === month)
+  const inMonth = range
+    ? transactions.filter(t => t.txn_date >= range.from && t.txn_date <= range.to)
+    : transactions.filter(t => t.txn_date.slice(0, 7) === month)
   if (inMonth.length === 0) return empty
 
   // Same guard as net worth: a total spanning currencies would be confidently
@@ -61,8 +69,9 @@ export function buildSpendingSummary(
       ...empty,
       transactionCount: inMonth.length,
       currencyWarning:
-        `This month spans ${currencies.join(', ')}. Totals need a single currency — ` +
-        `filter to one account, or track each currency separately.`,
+        `${range ? 'This period' : 'This month'} spans ${currencies.join(', ')}. ` +
+        `Totals need a single currency — filter to one account, or track each ` +
+        `currency separately.`,
     }
   }
 
