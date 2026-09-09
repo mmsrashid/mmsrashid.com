@@ -219,3 +219,74 @@ describe('buildPropertyDetail', () => {
     expect(d.row.cashProfit).toBe(0)
   })
 })
+
+describe('rent paid in advance', () => {
+  // £21,600 banked 28 Feb 2025 covering February to September: two months in
+  // 2024/25, six in 2025/26.
+  const advance = txn({
+    amount: 21600, category_id: 'rent', txn_date: '2025-02-28',
+    covers_from: '2025-02-01', covers_to: '2025-09-30',
+  } as never)
+
+  it('reports both bases for the year it was banked in', () => {
+    const d = buildPropertyDetail(prop(), [advance], CATS, ACCOUNTS, YEAR)
+    const rent = d.groups[0]
+
+    expect(rent.total).toBe(21600)      // cash: all of it arrived
+    expect(rent.accruedTotal).toBe(5400) // accruals: Feb + Mar only
+    expect(d.hasAccruals).toBe(true)
+  })
+
+  it('lists a payment banked before the period it accrues into', () => {
+    // The 2025/26 view must show the February payment, or its £16,200 of
+    // accrued rent could not be explained by anything on screen.
+    const next = taxYearBounds('2025/26')
+    const d = buildPropertyDetail(prop(), [advance], CATS, ACCOUNTS, next)
+    const rent = d.groups[0]
+
+    expect(rent.lines).toHaveLength(1)
+    expect(rent.lines[0].paidOutsidePeriod).toBe(true)
+    expect(rent.lines[0].accrued).toBe(16200)
+    expect(rent.total).toBe(0)           // nothing was banked in this year
+    expect(rent.accruedTotal).toBe(16200)
+  })
+
+  it('spreads the advance across the months it covers', () => {
+    // The whole point: instead of one £21,600 spike and five blanks, each
+    // covered month shows its £2,700.
+    const d = buildPropertyDetail(prop(), [advance], CATS, ACCOUNTS, YEAR)
+    expect(d.byMonth.map(m => [m.month, m.rent]))
+      .toEqual([['2025-02', 2700], ['2025-03', 2700]])
+  })
+
+  it('carries the covered period onto the line', () => {
+    const d = buildPropertyDetail(prop(), [advance], CATS, ACCOUNTS, YEAR)
+    expect(d.groups[0].lines[0]).toMatchObject({
+      coversFrom: '2025-02-01', coversTo: '2025-09-30', spread: true,
+    })
+  })
+
+  it('leaves an unaccrued payment on both bases equal', () => {
+    const plain = txn({ amount: 1200, category_id: 'rent', txn_date: '2024-06-01' })
+    const d = buildPropertyDetail(prop(), [plain], CATS, ACCOUNTS, YEAR)
+
+    expect(d.groups[0].total).toBe(1200)
+    expect(d.groups[0].accruedTotal).toBe(1200)
+    expect(d.hasAccruals).toBe(false)
+    expect(d.byMonth).toEqual([expect.objectContaining({ month: '2024-06', rent: 1200 })])
+  })
+
+  it('scales an accrued line by share', () => {
+    const d = buildPropertyDetail(prop({ share_percent: 50 }), [advance], CATS, ACCOUNTS, YEAR)
+    expect(d.groups[0].accruedTotal).toBe(2700)
+    expect(d.groups[0].lines[0].accrued).toBe(2700)
+    expect(d.byMonth[0].rent).toBe(1350)
+  })
+
+  it('does not pull an unrelated out-of-period expense into view', () => {
+    // Only rent accrues. An interest payment from another year stays out.
+    const old = txn({ amount: -4000, category_id: 'interest', txn_date: '2023-06-01' })
+    const d = buildPropertyDetail(prop(), [advance, old], CATS, ACCOUNTS, YEAR)
+    expect(d.groups.find(g => g.treatment === 'interest')).toBeUndefined()
+  })
+})

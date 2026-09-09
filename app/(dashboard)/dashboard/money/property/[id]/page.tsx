@@ -1,7 +1,8 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import type { PropertyDetail } from '@/lib/money/property-detail'
+import type { PropertyDetail, DetailLine } from '@/lib/money/property-detail'
+import { monthEnd } from '@/lib/money/accrual'
 
 const gbp = (n: number) =>
   n.toLocaleString('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 })
@@ -29,6 +30,7 @@ export default function PropertyDetailPage() {
   const [taxYear, setTaxYear] = useState(years[0])
   const [yearFromUrl, setYearFromUrl] = useState(false)
   const [d, setD] = useState<PropertyDetail | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -64,6 +66,31 @@ export default function PropertyDetailPage() {
     if (yearFromUrl) void load(taxYear)
   }, [load, taxYear, yearFromUrl])
 
+  /**
+   * Records the period a rent payment covers.
+   *
+   * Month inputs rather than dates: apportionment is by whole months, so
+   * offering a day would imply a precision the arithmetic does not have. The
+   * stored dates are the first day of the opening month and the last day of the
+   * closing one.
+   */
+  async function setCovered(line: DetailLine, fromMonth: string, toMonth: string) {
+    setSaving(line.id)
+    setError('')
+    try {
+      const body = fromMonth && toMonth
+        ? { covers_from: `${fromMonth}-01`, covers_to: monthEnd(toMonth) }
+        : { covers_from: null, covers_to: null }
+      const res = await fetch(`/api/money/transactions/${line.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const j = await res.json()
+      if (!res.ok) { setError(j.error || 'Could not save the covered period.'); return }
+      await load(taxYear)
+    } finally { setSaving(null) }
+  }
+
   const card: React.CSSProperties = {
     background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12,
     padding: '14px 18px', marginBottom: 16,
@@ -84,12 +111,20 @@ export default function PropertyDetailPage() {
   if (!d) return null
 
   const r = d.row
+  const accrualDiffers = Math.abs(r.rentAccrued - r.rentReceived) >= 0.01
   const figures: [string, number, string?][] = [
-    ['Rent received', r.rentReceived],
+    ...(accrualDiffers
+      // Both bases, labelled, whenever they disagree. Showing one number called
+      // "rent" when two defensible answers exist is how a return goes wrong.
+      ? [
+        ['Rent banked', r.rentReceived, 'cash — what arrived this year'] as [string, number, string],
+        ['Rent earned', r.rentAccrued, 'accruals — belongs to this year'] as [string, number, string],
+      ]
+      : [['Rent received', r.rentReceived] as [string, number]]),
     ['Allowable expenses', r.allowableExpenses],
     ['Mortgage interest', r.mortgageInterest],
     ['Cash profit', r.cashProfit, 'what actually hit the bank'],
-    ['Taxable profit', r.taxableProfit, 'interest excluded — Section 24'],
+    ['Taxable profit', r.taxableProfit, 'accrued rent, interest excluded — Section 24'],
     ['20% reducer', r.interestTaxReducer, r.reducerCapped ? 'capped by profit' : undefined],
   ]
 
@@ -151,6 +186,18 @@ export default function PropertyDetailPage() {
             a taxable profit of <strong>{gbp(r.taxableProfit)}</strong>, because mortgage interest
             is not deductible for a personally-held property. The {gbp(r.interestTaxReducer)}{' '}
             reducer offsets some of the tax, not the loss.
+          </p>
+        </div>
+      )}
+
+      {accrualDiffers && (
+        <div style={{ ...card, background: '#eff6ff', borderColor: '#bfdbfe' }}>
+          <p style={{ fontSize: 12, color: '#1e40af' }}>
+            Rent paid in advance is spread over the months it covers.{' '}
+            <strong>{gbp(r.rentReceived)}</strong> was banked in this tax year but{' '}
+            <strong>{gbp(r.rentAccrued)}</strong> belongs to it — the difference sits in the
+            neighbouring year. Taxable profit uses the accrued figure; cash profit uses what
+            actually moved.
           </p>
         </div>
       )}
@@ -247,8 +294,21 @@ export default function PropertyDetailPage() {
             <span style={{ fontSize: 10, color: '#9ca3af' }}>
               {g.lines.length} transaction{g.lines.length === 1 ? '' : 's'}
             </span>
-            <strong style={{ fontSize: 13, marginLeft: 'auto' }}>{gbp(g.total)}</strong>
+            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+              <strong style={{ fontSize: 13 }}>{gbp(g.accruedTotal)}</strong>
+              {Math.abs(g.accruedTotal - g.total) >= 0.01 && (
+                <div style={{ fontSize: 9, color: '#9ca3af' }}>
+                  {gbp(g.total)} banked
+                </div>
+              )}
+            </div>
           </div>
+          {g.treatment === 'rental_income' && (
+            <p style={{ fontSize: 10, color: '#9ca3af', marginBottom: 6 }}>
+              Paid in advance? Set the months it covers and it will be spread across them.
+              Leave blank to count it all on the day it arrived.
+            </p>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               {g.lines.map(l => (
@@ -271,7 +331,51 @@ export default function PropertyDetailPage() {
                     padding: '5px 8px', fontSize: 11, textAlign: 'right', fontWeight: 600,
                     whiteSpace: 'nowrap', borderBottom: '1px solid #f9fafb',
                     color: l.amount < 0 ? '#111' : '#059669',
-                  }}>{gbp(l.amount)}</td>
+                  }}>
+                    {gbp(l.amount)}
+                    {l.spread && (
+                      <div style={{ fontSize: 9, color: '#1e40af', fontWeight: 500 }}>
+                        {gbp(l.accrued)} in this year
+                      </div>
+                    )}
+                    {l.paidOutsidePeriod && (
+                      <div style={{ fontSize: 9, color: '#9ca3af', fontWeight: 500 }}>
+                        banked {l.date}
+                      </div>
+                    )}
+                  </td>
+                  {g.treatment === 'rental_income' && l.amount > 0 && (
+                    <td style={{ padding: '5px 8px', borderBottom: '1px solid #f9fafb', whiteSpace: 'nowrap' }}>
+                      {/* Two month pickers. Whole months, because that is how the
+                          apportionment works — offering a day would imply a
+                          precision the arithmetic does not have. */}
+                      <input type="month" aria-label="Covers from"
+                        defaultValue={l.coversFrom ? l.coversFrom.slice(0, 7) : ''}
+                        disabled={saving === l.id}
+                        onChange={e => {
+                          const to = l.coversTo ? l.coversTo.slice(0, 7) : e.target.value
+                          if (e.target.value) void setCovered(l, e.target.value, to)
+                        }}
+                        style={{ ...input, fontSize: 10, padding: '2px 4px', width: 108 }} />
+                      <span style={{ fontSize: 10, color: '#9ca3af', margin: '0 3px' }}>→</span>
+                      <input type="month" aria-label="Covers to"
+                        defaultValue={l.coversTo ? l.coversTo.slice(0, 7) : ''}
+                        disabled={saving === l.id}
+                        onChange={e => {
+                          const from = l.coversFrom ? l.coversFrom.slice(0, 7) : l.date.slice(0, 7)
+                          if (e.target.value) void setCovered(l, from, e.target.value)
+                        }}
+                        style={{ ...input, fontSize: 10, padding: '2px 4px', width: 108 }} />
+                      {(l.coversFrom || l.coversTo) && (
+                        <button onClick={() => void setCovered(l, '', '')}
+                          disabled={saving === l.id}
+                          title="Clear the covered period and treat it as cash"
+                          style={{ border: 'none', background: 'none', fontSize: 10, color: '#dc2626', cursor: 'pointer' }}>
+                          clear
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -31,6 +31,28 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
   }
 
+  // The period a payment covers, for rent paid in advance. Both dates move
+  // together: one alone cannot describe a period, and a half-filled pair would
+  // silently fall back to cash treatment while looking as though it were set.
+  if (body.covers_from !== undefined || body.covers_to !== undefined) {
+    const from = body.covers_from || null
+    const to = body.covers_to || null
+    if ((from === null) !== (to === null)) {
+      return NextResponse.json(
+        { error: 'Give both a start and an end for the covered period, or neither.' },
+        { status: 400 },
+      )
+    }
+    if (from && to && to < from) {
+      return NextResponse.json(
+        { error: 'The covered period ends before it starts.' },
+        { status: 400 },
+      )
+    }
+    patch.covers_from = from
+    patch.covers_to = to
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }

@@ -31,8 +31,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     .from('money_properties').select('*').eq('id', id).maybeSingle()
   if (!property) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Only this property's rows, and paged: PostgREST caps at 1000 and a
-  // truncated P&L would look self-consistent while understating the year.
+  // Every row for this property, with no date bound.
+  //
+  // Rent paid in advance is apportioned into later periods, so the P&L for a
+  // year has to be able to see a payment banked before it. Scoped to one
+  // property this stays small, and buildPropertyDetail filters by period —
+  // including, for accrual, by the date each monthly share falls on.
   const PAGE = 1000
   const txns: MoneyTransaction[] = []
   for (let offset = 0; ; offset += PAGE) {
@@ -40,8 +44,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       .from('money_transactions')
       .select('*')
       .eq('property_id', id)
-      .gte('txn_date', period.from)
-      .lte('txn_date', period.to)
       .range(offset, offset + PAGE - 1)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     txns.push(...((data ?? []) as MoneyTransaction[]))

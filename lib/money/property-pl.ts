@@ -1,6 +1,7 @@
 import type { MoneyProperty, PropertyTreatment } from './property-types'
 import type { MoneyCategory, MoneyTransaction } from './spending-types'
 import type { MoneyAccount } from './types'
+import { accruedInPeriod } from './accrual'
 
 /** A category row carrying its property treatment, once migration 015 has run. */
 type CategoryWithTreatment = MoneyCategory & { property_treatment?: PropertyTreatment | null }
@@ -14,7 +15,15 @@ export interface PropertyPLRow {
   code: string
   label: string | null
   sharePercent: number
+  /** Rent banked inside the period. Cash basis. */
   rentReceived: number
+  /**
+   * Rent belonging to the period once advances are apportioned across the
+   * months they cover. Accruals basis, and what taxable profit is built from.
+   *
+   * Equal to rentReceived until a payment has a covered period recorded.
+   */
+  rentAccrued: number
   allowableExpenses: number
   mortgageInterest: number
   capitalSpend: number
@@ -95,6 +104,11 @@ export function buildPropertyPL(
     ? `These transactions span ${currencies.join(', ')}. A property P&L needs a single currency.`
     : null
 
+  // Every transaction for a property, whenever it was paid. Only accrual uses
+  // this; every other figure stays filtered by payment date.
+  const allRowsFor = (prop: MoneyProperty) => transactions.filter(t =>
+    t.property_id === prop.id && (!prop.disposed_date || t.txn_date <= prop.disposed_date))
+
   const perProperty: PropertyPLRow[] = properties.map(p => {
     const share = Number(p.share_percent) / 100
 
@@ -126,18 +140,37 @@ export function buildPropertyPL(
       else otherP += Math.abs(amount)
     }
 
+    // Accrued rent is computed from EVERY rent transaction for this property,
+    // not just those paid inside the period.
+    //
+    // That is the whole point: six months paid in February 2025 belongs mostly
+    // to 2025/26, and filtering by payment date first would make the 2025/26
+    // P&L blind to the payment that funds it. The share dates decide where the
+    // money lands, so the filter has to come after apportionment.
+    let accruedP = 0
+    for (const t of allRowsFor(p)) {
+      const treatment = t.category_id ? treatmentOf.get(t.category_id) ?? null : null
+      if (treatment !== 'rental_income') continue
+      if (Number(t.amount) <= 0) continue
+      accruedP += pence(accruedInPeriod(t, period))
+    }
+
     // Share applies to every figure, not just the profit, so a jointly held
     // property reports the owner's portion throughout.
     const sh = (p: number) => Math.round(p * share)
 
     const rent = sh(rentP)
+    const accrued = sh(accruedP)
     const allow = sh(allowP)
     const interest = sh(interestP)
     const capital = sh(capitalP)
     const other = sh(otherP)
 
+    // Cash profit stays on the cash basis — it answers "what left the bank",
+    // and apportioning it would make it answer nothing.
     const cashP = rent - allow - interest - other
-    const taxableP = rent - allow
+    // Taxable profit uses accrued rent, which is the basis being reported on.
+    const taxableP = accrued - allow
 
     // Relief is limited to 20% of the lower of finance costs and property
     // profits. An uncapped 20% of interest would overstate it in a lean year.
@@ -152,6 +185,7 @@ export function buildPropertyPL(
       label: p.label,
       sharePercent: Number(p.share_percent),
       rentReceived: rent / 100,
+      rentAccrued: accrued / 100,
       allowableExpenses: allow / 100,
       mortgageInterest: interest / 100,
       capitalSpend: capital / 100,
@@ -182,6 +216,7 @@ export function buildPropertyPL(
     perProperty,
     totals: {
       rentReceived: sum(r => r.rentReceived),
+      rentAccrued: sum(r => r.rentAccrued),
       allowableExpenses: sum(r => r.allowableExpenses),
       mortgageInterest: sum(r => r.mortgageInterest),
       capitalSpend: sum(r => r.capitalSpend),

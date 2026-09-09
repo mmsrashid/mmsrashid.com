@@ -259,3 +259,91 @@ describe('latestTaxYearWithActivity', () => {
     expect(latestTaxYearWithActivity([t('2024-06-01', null)])).toBeNull()
   })
 })
+
+describe('accruals basis for rent paid in advance', () => {
+  const CATS = [
+    { id: 'rent', user_id: 'u', name: 'Rent received', kind: 'income',
+      sort_order: 1, created_at: 'x', property_treatment: 'rental_income' },
+    { id: 'int', user_id: 'u', name: 'Mortgage interest', kind: 'spending',
+      sort_order: 2, created_at: 'x', property_treatment: 'interest' },
+  ] as never[]
+  const ACCTS = [{ id: 'a1', user_id: 'u', name: 'Barclays', kind: 'current',
+    currency: 'GBP', created_at: 'x' }] as never[]
+  const PROPS = [{ id: 'p1', user_id: 'u', code: '85KX', label: null,
+    share_percent: 100, disposed_date: null, created_at: 'x' }] as never[]
+
+  // The real case: £21,600 banked in February 2025 covering February to
+  // September. February and March belong to 2024/25; April to September to
+  // 2025/26.
+  const advance = {
+    id: 't1', user_id: 'u', account_id: 'a1', txn_date: '2025-02-28',
+    description: 'RENT ADVANCE', amount: 21600, currency: 'GBP',
+    category_id: 'rent', category_source: 'manual', property_id: 'p1',
+    dedupe_key: 'k1', created_at: 'x',
+    covers_from: '2025-02-01', covers_to: '2025-09-30',
+  } as never
+
+  it('splits the advance across the two tax years', () => {
+    const a = buildPropertyPL(PROPS, [advance], CATS, ACCTS, taxYearBounds('2024/25'))
+    const b = buildPropertyPL(PROPS, [advance], CATS, ACCTS, taxYearBounds('2025/26'))
+
+    expect(a.perProperty[0].rentAccrued).toBe(5400)
+    expect(b.perProperty[0].rentAccrued).toBe(16200)
+    expect(a.perProperty[0].rentAccrued + b.perProperty[0].rentAccrued).toBe(21600)
+  })
+
+  it('keeps rentReceived on the cash basis, in the year it was banked', () => {
+    // Both bases are reported. Cash answers "what hit the bank", and losing
+    // that would make the P&L impossible to reconcile against a statement.
+    const a = buildPropertyPL(PROPS, [advance], CATS, ACCTS, taxYearBounds('2024/25'))
+    const b = buildPropertyPL(PROPS, [advance], CATS, ACCTS, taxYearBounds('2025/26'))
+
+    expect(a.perProperty[0].rentReceived).toBe(21600)
+    expect(b.perProperty[0].rentReceived).toBe(0)
+  })
+
+  it('builds taxable profit from accrued rent, cash profit from cash', () => {
+    const rows = [advance, {
+      ...(advance as object), id: 't2', dedupe_key: 'k2', amount: -4000,
+      category_id: 'int', txn_date: '2025-03-15',
+      covers_from: null, covers_to: null,
+    } as never]
+
+    const a = buildPropertyPL(PROPS, rows, CATS, ACCTS, taxYearBounds('2024/25'))
+    const r = a.perProperty[0]
+
+    expect(r.taxableProfit).toBe(5400)                 // accrued rent, no allowable
+    expect(r.cashProfit).toBe(21600 - 4000)            // cash rent less interest
+    // 20% of the LOWER of interest and taxable profit: 20% of 4000, not of 5400.
+    expect(r.interestTaxReducer).toBe(800)
+    expect(r.reducerCapped).toBe(false)
+  })
+
+  it('sees an advance paid before the period it belongs to', () => {
+    // The point of the whole exercise: the 2025/26 P&L must find money banked
+    // in February 2025, which is outside its own date range.
+    const b = buildPropertyPL(PROPS, [advance], CATS, ACCTS, taxYearBounds('2025/26'))
+    expect(b.perProperty[0].rentAccrued).toBe(16200)
+  })
+
+  it('leaves a payment with no covered period exactly where it was', () => {
+    const plain = { ...(advance as object), covers_from: null, covers_to: null } as never
+    const a = buildPropertyPL(PROPS, [plain], CATS, ACCTS, taxYearBounds('2024/25'))
+    const b = buildPropertyPL(PROPS, [plain], CATS, ACCTS, taxYearBounds('2025/26'))
+
+    expect(a.perProperty[0].rentAccrued).toBe(21600)
+    expect(a.perProperty[0].rentReceived).toBe(21600)
+    expect(b.perProperty[0].rentAccrued).toBe(0)
+  })
+
+  it('applies share to accrued rent as well', () => {
+    const half = [{ ...(PROPS[0] as object), share_percent: 50 }] as never[]
+    const a = buildPropertyPL(half, [advance], CATS, ACCTS, taxYearBounds('2024/25'))
+    expect(a.perProperty[0].rentAccrued).toBe(2700)
+  })
+
+  it('totals accrued rent across the portfolio', () => {
+    const a = buildPropertyPL(PROPS, [advance], CATS, ACCTS, taxYearBounds('2024/25'))
+    expect(a.totals.rentAccrued).toBe(5400)
+  })
+})

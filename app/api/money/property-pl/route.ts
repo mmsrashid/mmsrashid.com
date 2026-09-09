@@ -26,6 +26,21 @@ export async function GET(req: Request) {
     ? taxYearBounds(taxYear)
     : (from && to ? { from, to } : taxYearBounds(String(new Date().getFullYear())))
 
+  // Fetched wider than the reporting period, on purpose.
+  //
+  // Rent paid six months in advance belongs mostly to the FOLLOWING tax year,
+  // so a query bounded by the period would leave that year's P&L blind to the
+  // payment that funds it. Two years either side comfortably covers any
+  // advance or arrears a tenancy produces; buildPropertyPL still filters every
+  // non-accrual figure by payment date.
+  const widen = (date: string, years: number) => {
+    const d = new Date(`${date}T00:00:00Z`)
+    d.setUTCFullYear(d.getUTCFullYear() + years)
+    return d.toISOString().slice(0, 10)
+  }
+  const fetchFrom = widen(period.from, -2)
+  const fetchTo = widen(period.to, 2)
+
   // Paged, as elsewhere: PostgREST caps at 1000 and a truncated P&L would look
   // self-consistent while understating the year.
   const PAGE = 1000
@@ -34,8 +49,8 @@ export async function GET(req: Request) {
     const { data, error } = await supabase
       .from('money_transactions')
       .select('*')
-      .gte('txn_date', period.from)
-      .lte('txn_date', period.to)
+      .gte('txn_date', fetchFrom)
+      .lte('txn_date', fetchTo)
       .range(offset, offset + PAGE - 1)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     txns.push(...((data ?? []) as MoneyTransaction[]))

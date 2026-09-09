@@ -1,4 +1,5 @@
 import { buildSpendingSummary, type SpendingSummary } from './spending-summary'
+import { monthEnd } from './accrual'
 import { taxYearBounds, type Period } from './property-pl'
 import type { MoneyCategory, MoneyTransaction } from './spending-types'
 import type { PropertyTreatment } from './property-types'
@@ -37,14 +38,9 @@ export function treatmentMap(
   return new Map(categories.map(c => [c.id, c.property_treatment ?? null] as const))
 }
 
-/** Last calendar day of a YYYY-MM month, as YYYY-MM-DD. */
-export function monthEnd(month: string): string {
-  const [y, m] = month.split('-').map(Number)
-  // Day 0 of the next month is the last day of this one, and it handles leap
-  // years without a table.
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  return `${month}-${String(last).padStart(2, '0')}`
-}
+// Re-exported: it lives with the other period maths in accrual.ts, and the
+// personal book's own tests and callers import it from here.
+export { monthEnd } from './accrual'
 
 /** The UK tax year containing a YYYY-MM month, as "2025/26". */
 export function taxYearOf(month: string): string {
