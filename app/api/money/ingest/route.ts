@@ -4,6 +4,8 @@ import { extractBalances, isSupportedMoneyMime } from '@/lib/money/extract'
 import { buildAccountResolver, resolveAccountByBankDetails } from '@/lib/money/match-account'
 import { parseBalanceCsv } from '@/lib/money/parse-csv'
 import { parseTransactionCsv } from '@/lib/money/parse-transaction-csv'
+import { parseBarclaysPdf, reconcile } from '@/lib/money/parse-barclays-pdf'
+import { pdfToLines } from '@/lib/money/pdf-lines'
 import { extractTransactions } from '@/lib/money/extract-transactions'
 import { buildImportKeys } from '@/lib/money/dedupe-key'
 import { applyRules } from '@/lib/money/categorise'
@@ -214,18 +216,84 @@ export async function POST(req: Request) {
         if (hit) { hintedAccountId = hit.id; break }
       }
     } else {
-      try {
-        const r = await extractTransactions({
-          data: bytes.toString('base64'),
-          mediaType: file.type || 'image/png',
-        })
-        parsed = r.rows
-        lowConfidence = r.lowConfidence
-        warning = r.warning
-      } catch (err) {
-        // The balances above are already filed; losing them because the
-        // transaction pass failed would be worse than reporting the failure.
-        warning = `Could not read the transaction list: ${String(err)}`
+      // A PDF statement is parsed, not read by a model, whenever its layout is
+      // recognised.
+      //
+      // Barclays transaction rows print a day and month with NO YEAR, and a
+      // quarterly statement crosses the boundary — the January statement covers
+      // October to January. A model guessing the year would move a quarter of
+      // the rows into the wrong tax year and look entirely correct doing it.
+      // The parser derives the year from the statement period, and proves
+      // itself by reconciling against the printed balances.
+      let parsedByLayout = false
+
+      if (file.type === 'application/pdf') {
+        try {
+          const lines = await pdfToLines(new Uint8Array(bytes))
+          const statement = parseBarclaysPdf(lines)
+
+          if (statement.rows.length > 0) {
+            parsed = statement.rows
+            parsedByLayout = true
+
+            const check = reconcile(statement)
+            const notes: string[] = []
+            if (check.ok) {
+              notes.push(
+                `Reconciled against the statement: ${statement.rows.length} transactions ` +
+                `take ${statement.startBalance} to ${statement.endBalance}.`,
+              )
+            } else if (check.difference !== null) {
+              // Stated plainly rather than hidden: a non-zero difference means
+              // a row was missed or misread, and the figures cannot be trusted
+              // until it is explained.
+              notes.push(
+                `WARNING: the parsed transactions do not reconcile. The statement ends at ` +
+                `${check.actual} but the rows add to ${check.expected}, a difference of ` +
+                `${check.difference}. Something was missed — check before relying on this.`,
+              )
+            } else {
+              notes.push(
+                'Could not reconcile: the statement did not print both a start and end balance.',
+              )
+            }
+            warning = [...notes, ...statement.warnings].join(' ')
+
+            // The statement prints its own sort code and account number, which
+            // beats guessing — and matters here because one PDF names several
+            // accounts in its summary pages.
+            for (const hint of statement.accountHints) {
+              const asText = `${hint.sortCode ?? ''} ${hint.accountNumber ?? ''}`.trim()
+              const hit = resolveAccountByBankDetails(asText, accounts ?? [])
+              if (hit) { hintedAccountId = hit.id; break }
+            }
+          } else if (statement.warnings.length > 0) {
+            // A recognised document with nothing to import — a Statement of
+            // Fees, or a period that could not be read. Its own explanation is
+            // more use than anything a model would say about it.
+            warning = statement.warnings.join(' ')
+            parsedByLayout = true
+          }
+        } catch (err) {
+          warning = `Could not read the PDF layout: ${String(err)}`
+        }
+      }
+
+      // Screenshots, and any PDF whose layout is not recognised.
+      if (!parsedByLayout) {
+        try {
+          const r = await extractTransactions({
+            data: bytes.toString('base64'),
+            mediaType: file.type || 'image/png',
+          })
+          parsed = r.rows
+          lowConfidence = r.lowConfidence
+          warning = [warning, r.warning].filter(Boolean).join(' ') || null
+        } catch (err) {
+          // The balances above are already filed; losing them because the
+          // transaction pass failed would be worse than reporting the failure.
+          warning = `Could not read the transaction list: ${String(err)}`
+        }
       }
     }
 
