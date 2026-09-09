@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import SpendingByCategory from '@/components/money/SpendingByCategory'
 import CategoryTrend, { type TrendPoint } from '@/components/money/CategoryTrend'
+import CategoryManager from '@/components/money/CategoryManager'
 import { buildSpendingSummary } from '@/lib/money/spending-summary'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
 import type { MoneyAccount } from '@/lib/money/types'
@@ -37,6 +38,10 @@ export default function SpendingPage() {
       setLoading(false)
     })
   }, [])
+
+  const reloadCategories = () =>
+    fetch('/api/money/categories').then(r => r.json())
+      .then(c => setCats(Array.isArray(c) ? c : []))
 
   const months = useMemo(
     () => [...new Set(txns.map(t => t.txn_date.slice(0, 7)))].sort().reverse(),
@@ -131,6 +136,8 @@ export default function SpendingPage() {
         <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Spending by month</h3>
         <CategoryTrend points={trend} />
       </div>
+
+      <CategoryManager categories={cats} onChanged={reloadCategories} />
     </div>
   )
 }

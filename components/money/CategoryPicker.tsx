@@ -28,9 +28,13 @@ export default function CategoryPicker({
   const property = categories.filter(c => c.property_treatment)
   const plain = categories.filter(c => !c.property_treatment)
 
+  // "Personal" rather than "Spending": the group holds the user's own outgoings,
+  // as distinct from property costs, which have their own group. The stored
+  // `kind` stays 'spending' — every spending total keys off it — so this is a
+  // label, not a data change.
   const groups: [string, WithTreatment[]][] = [
     ['Property', property],
-    ['Spending', plain.filter(c => c.kind === 'spending')],
+    ['Personal', plain.filter(c => c.kind === 'spending')],
     ['Income', plain.filter(c => c.kind === 'income')],
     ['Transfers', plain.filter(c => c.kind === 'transfer')],
   ]

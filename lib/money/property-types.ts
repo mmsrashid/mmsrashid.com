@@ -51,6 +51,12 @@ export const PROPERTY_CATEGORY_SEED: {
   { name: 'Property repairs', kind: 'spending', property_treatment: 'allowable' },
   { name: 'Property insurance', kind: 'spending', property_treatment: 'allowable' },
   { name: 'Ground rent & service charge', kind: 'spending', property_treatment: 'allowable' },
+  // Allowable only for periods the landlord actually pays it — a void, an
+  // all-inclusive let, or an HMO. Where the tenant is liable it is not the
+  // landlord's expense at all, so tagging a tenant-paid bill here would
+  // understate taxable profit.
+  { name: 'Council tax', kind: 'spending', property_treatment: 'allowable' },
+  { name: 'Utilities (property)', kind: 'spending', property_treatment: 'allowable' },
   { name: 'Safety certificates', kind: 'spending', property_treatment: 'allowable' },
   { name: 'Property improvements', kind: 'spending', property_treatment: 'capital' },
 ]

@@ -70,6 +70,7 @@ export const DEFAULT_CATEGORIES: { name: string; kind: CategoryKind }[] = [
   { name: 'Health', kind: 'spending' },
   { name: 'Pharmacy', kind: 'spending' },
   { name: 'Insurance', kind: 'spending' },
+  { name: 'Car insurance', kind: 'spending' },
   { name: 'Subscriptions', kind: 'spending' },
   { name: 'Shopping', kind: 'spending' },
   { name: 'Home', kind: 'spending' },
