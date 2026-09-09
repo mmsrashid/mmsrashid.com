@@ -30,6 +30,10 @@ export interface MonthRent {
   month: string
   rent: number
   expenses: number
+  /** Rent received so far this period, including this month. */
+  cumulativeRent: number
+  /** Expenses so far this period, including this month. */
+  cumulativeExpenses: number
 }
 
 export interface PropertyDetail {
@@ -37,7 +41,7 @@ export interface PropertyDetail {
   period: Period
   row: PropertyPLRow
   groups: DetailGroup[]
-  /** Rent and expenses by month, to make a missing month visible. */
+  /** Rent and expenses by month, with running totals. */
   byMonth: MonthRent[]
   currencyWarning: string | null
 }
@@ -53,6 +57,25 @@ const GROUP_LABEL: Record<PropertyTreatment | 'untreated', string> = {
   capital: 'Capital spend',
   non_allowable: 'Not allowable',
   untreated: 'Tagged but unclassified',
+}
+
+/**
+ * Running totals alongside the monthly figures.
+ *
+ * Rent is not always monthly — three and six months in advance both happen —
+ * so a month-by-month net is misleading on its own: five rent-free months
+ * followed by one large payment looks like arrears when it is an advance. The
+ * cumulative columns are the ones that tell you whether rent is keeping up with
+ * the mortgage.
+ */
+function withRunningTotals(months: MonthRent[]): MonthRent[] {
+  let rent = 0
+  let expenses = 0
+  return months.map(m => {
+    rent += m.rent
+    expenses += m.expenses
+    return { ...m, cumulativeRent: rent, cumulativeExpenses: expenses }
+  })
 }
 
 /**
@@ -109,7 +132,8 @@ export function buildPropertyDetail(
     buckets.set(treatment, list)
 
     const key = t.txn_date.slice(0, 7)
-    const m = monthly.get(key) ?? { month: key, rent: 0, expenses: 0 }
+    const m = monthly.get(key)
+      ?? { month: key, rent: 0, expenses: 0, cumulativeRent: 0, cumulativeExpenses: 0 }
     if (treatment === 'rental_income') {
       // Only money in counts as rent. A refund to the tenant sits in expenses,
       // where it belongs, rather than reducing the rent figure invisibly.
@@ -136,7 +160,7 @@ export function buildPropertyDetail(
     period,
     row,
     groups,
-    byMonth: [...monthly.values()].sort((a, b) => a.month.localeCompare(b.month)),
+    byMonth: withRunningTotals([...monthly.values()].sort((a, b) => a.month.localeCompare(b.month))),
     currencyWarning: pl.currencyWarning,
   }
 }

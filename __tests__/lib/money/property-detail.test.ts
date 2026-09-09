@@ -134,15 +134,54 @@ describe('buildPropertyDetail', () => {
   })
 
   describe('by month', () => {
-    it('makes a missing rent month visible', () => {
+    it('records rent in the month it arrives', () => {
       const d = buildPropertyDetail(prop(), [
         txn({ amount: 1200, category_id: 'rent', txn_date: '2024-06-01' }),
         txn({ amount: 1200, category_id: 'rent', txn_date: '2024-08-01' }),
       ], CATS, ACCOUNTS, YEAR)
 
-      // July simply has no row, which is what shows the gap.
+      // July has no row. That is not evidence of arrears — rent on this
+      // portfolio is sometimes paid three or six months in advance.
       expect(d.byMonth.map(m => [m.month, m.rent]))
         .toEqual([['2024-06', 1200], ['2024-08', 1200]])
+    })
+
+    it('running totals make a six-month advance read correctly', () => {
+      // The real 85KX shape: interest leaves monthly, rent arrives in lumps.
+      // Month by month this looks like five months of arrears; the cumulative
+      // columns show the year is ahead from the moment the advance lands.
+      const rows = [
+        ...['2024-04', '2024-05', '2024-06', '2024-07', '2024-08', '2024-09'].map(m =>
+          txn({ amount: -1000, category_id: 'interest', txn_date: `${m}-15` })),
+        // The 10th, not the 2nd: the tax year starts on 6 April, so an advance
+        // paid days earlier belongs to the previous year entirely.
+        txn({ amount: 7200, category_id: 'rent', txn_date: '2024-04-10' }),
+      ]
+      const d = buildPropertyDetail(prop(), rows, CATS, ACCOUNTS, YEAR)
+
+      const april = d.byMonth[0]
+      expect(april.rent).toBe(7200)
+      expect(april.cumulativeRent).toBe(7200)
+
+      // Every later month shows no rent but stays ahead cumulatively.
+      for (const m of d.byMonth.slice(1)) {
+        expect(m.rent).toBe(0)
+        expect(m.rent - m.expenses).toBeLessThan(0)
+        expect(m.cumulativeRent - m.cumulativeExpenses).toBeGreaterThan(0)
+      }
+
+      const last = d.byMonth[d.byMonth.length - 1]
+      expect(last.cumulativeRent).toBe(7200)
+      expect(last.cumulativeExpenses).toBe(6000)
+      expect(last.cumulativeRent - last.cumulativeExpenses).toBe(1200)
+    })
+
+    it('accumulates in date order, not insertion order', () => {
+      const d = buildPropertyDetail(prop(), [
+        txn({ amount: 100, category_id: 'rent', txn_date: '2024-12-01' }),
+        txn({ amount: 300, category_id: 'rent', txn_date: '2024-06-01' }),
+      ], CATS, ACCOUNTS, YEAR)
+      expect(d.byMonth.map(m => m.cumulativeRent)).toEqual([300, 400])
     })
 
     it('counts a refund to the tenant as an expense, not as negative rent', () => {
@@ -152,7 +191,7 @@ describe('buildPropertyDetail', () => {
         txn({ amount: -200, category_id: 'rent', txn_date: '2024-06-15' }),
       ], CATS, ACCOUNTS, YEAR)
 
-      expect(d.byMonth[0]).toEqual({ month: '2024-06', rent: 1200, expenses: 200 })
+      expect(d.byMonth[0]).toMatchObject({ month: '2024-06', rent: 1200, expenses: 200 })
     })
 
     it('is ordered oldest first, so it reads as a timeline', () => {

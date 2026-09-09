@@ -173,12 +173,15 @@ export default function PropertyDetailPage() {
         <div style={card}>
           <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>By month</h3>
           <p style={{ fontSize: 10, color: '#9ca3af', marginBottom: 10 }}>
-            A month with no rent has no row — that is how a missed payment shows up.
+            Rent is recorded when it arrives, so a month showing no rent may be covered by an
+            earlier payment in advance rather than unpaid. Compare the running totals — those are
+            what tell you whether rent is keeping up with the mortgage.
           </p>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                {['Month', 'Rent', 'Expenses', 'Net'].map(h => (
+                {['Month', 'Rent', 'Expenses', 'Net', 'Rent to date', 'Expenses to date',
+                  'Net to date'].map(h => (
                   <th key={h} style={{
                     textAlign: h === 'Month' ? 'left' : 'right', padding: '6px 8px',
                     background: '#fafafa', color: '#9ca3af', fontWeight: 600, fontSize: 11,
@@ -199,11 +202,27 @@ export default function PropertyDetailPage() {
                     {m.expenses ? gbp(m.expenses) : '—'}
                   </td>
                   <td style={{
-                    padding: '6px 8px', fontSize: 12, textAlign: 'right', fontWeight: 600,
+                    padding: '6px 8px', fontSize: 12, textAlign: 'right',
                     color: m.rent - m.expenses < 0 ? '#dc2626' : '#111',
                     borderBottom: '1px solid #f9fafb',
                   }}>
                     {gbp(m.rent - m.expenses)}
+                  </td>
+                  <td style={{ padding: '6px 8px', fontSize: 12, textAlign: 'right', color: '#059669', borderBottom: '1px solid #f9fafb' }}>
+                    {gbp(m.cumulativeRent)}
+                  </td>
+                  <td style={{ padding: '6px 8px', fontSize: 12, textAlign: 'right', borderBottom: '1px solid #f9fafb' }}>
+                    {gbp(m.cumulativeExpenses)}
+                  </td>
+                  {/* The running net is the honest read on a property whose rent
+                      arrives in advance: the monthly column swings wildly, this
+                      one shows whether the year is actually ahead or behind. */}
+                  <td style={{
+                    padding: '6px 8px', fontSize: 12, textAlign: 'right', fontWeight: 700,
+                    color: m.cumulativeRent - m.cumulativeExpenses < 0 ? '#dc2626' : '#111',
+                    borderBottom: '1px solid #f9fafb',
+                  }}>
+                    {gbp(m.cumulativeRent - m.cumulativeExpenses)}
                   </td>
                 </tr>
               ))}
