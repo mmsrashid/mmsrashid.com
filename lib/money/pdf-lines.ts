@@ -21,18 +21,21 @@ export async function pdfToLines(bytes: Uint8Array): Promise<PdfLine[]> {
 
     // Group by baseline. Items on one visual row can differ by a point or two,
     // so an exact match on y would split a row in half.
-    const rows = new Map<number, { text: string; x: number }[]>()
-    for (const item of content.items as { str?: string; transform?: number[] }[]) {
+    const rows = new Map<number, { text: string; x: number; width: number }[]>()
+    for (const item of content.items as
+      { str?: string; transform?: number[]; width?: number }[]) {
       const text = item.str
       if (!text || !text.trim()) continue
       const transform = item.transform
       if (!transform) continue
       const y = Math.round(transform[5])
       const x = Math.round(transform[4])
+      // Width is what makes the right-aligned money columns readable at all.
+      const width = Math.round(item.width ?? 0)
 
       const key = [...rows.keys()].find(k => Math.abs(k - y) <= 2) ?? y
       const bucket = rows.get(key) ?? []
-      bucket.push({ text, x })
+      bucket.push({ text, x, width })
       rows.set(key, bucket)
     }
 

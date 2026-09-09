@@ -19,6 +19,13 @@ export interface PdfToken {
   text: string
   /** Left edge, in PDF points. */
   x: number
+  /**
+   * Rendered width, in PDF points.
+   *
+   * Needed, not decorative: the money columns are RIGHT-aligned, so the left
+   * edge of a value moves with how wide it is. Only the right edge is stable.
+   */
+  width: number
 }
 
 export interface PdfLine {
@@ -151,36 +158,75 @@ function findAccountHints(lines: PdfLine[]) {
   return hints
 }
 
-interface Columns { date: number; description: number; out: number; in: number; balance: number }
+interface Columns {
+  /** Left edge of the date column. */
+  date: number
+  /** Left edge of the description column. */
+  description: number
+  /** RIGHT edges of the three money columns. */
+  out: number
+  in: number
+  balance: number
+}
 
-/** The table header gives the column anchors; values sit right-aligned under them. */
+const right = (t: PdfToken) => t.x + t.width
+
+/**
+ * Column anchors from the table header.
+ *
+ * The money columns are keyed on their RIGHT edge, because that is where both
+ * the heading and every value under it are aligned. Measured on a real
+ * statement the value right-edges cluster at 305, 360 and 412 while the heading
+ * right-edges are 304, 360 and 412 — the same three columns.
+ *
+ * Labels are matched left to right so a stray "Money in" in a summary box
+ * elsewhere on the line cannot be picked up instead of the real heading.
+ */
 function findColumns(line: PdfLine): Columns | null {
-  const at = (label: RegExp) => {
-    const tok = line.tokens.find(t => label.test(t.text.trim()))
-    return tok ? tok.x : null
+  const sorted = [...line.tokens].sort((a, b) => a.x - b.x)
+  let i = 0
+  const next = (label: RegExp): PdfToken | null => {
+    for (; i < sorted.length; i++) {
+      if (label.test(sorted[i].text.trim())) return sorted[i++]
+    }
+    return null
   }
-  const date = at(/^date$/i)
-  const description = at(/^description$/i)
-  const out = at(/^money\s*out$/i)
-  const inn = at(/^money\s*in$/i)
-  const balance = at(/^balance$/i)
-  if (date === null || out === null || inn === null || balance === null) return null
-  return { date, description: description ?? date + 30, out, in: inn, balance }
+  const date = next(/^date$/i)
+  const description = next(/^description$/i)
+  const out = next(/^money\s*out$/i)
+  const inn = next(/^money\s*in$/i)
+  const balance = next(/^balance$/i)
+  if (!date || !out || !inn || !balance) return null
+  return {
+    date: date.x,
+    description: description ? description.x : date.x + 30,
+    out: right(out),
+    in: right(inn),
+    balance: right(balance),
+  }
 }
 
 /**
- * Which money column a number belongs to.
+ * Which money column a number belongs to, by its right edge.
  *
- * Boundaries sit midway between the header anchors. Values are right-aligned,
- * so a wide number starts further left than a narrow one in the same column —
- * which is exactly why position beats "the first number is money out".
+ * Nearest anchor wins. Midway boundaries on the LEFT edge were wrong and
+ * silently so: "8.99" right-aligned in Money out starts at x=288, past the
+ * midpoint of the two left anchors, so a card payment was read as money in.
+ * Eight statements failed to reconcile because of it, by amounts as small as
+ * £8.99 that no amount of eyeballing would have caught.
  */
-function classify(x: number, cols: Columns): 'out' | 'in' | 'balance' {
-  const outIn = (cols.out + cols.in) / 2
-  const inBal = (cols.in + cols.balance) / 2
-  if (x < outIn) return 'out'
-  if (x < inBal) return 'in'
-  return 'balance'
+function classify(token: PdfToken, cols: Columns): 'out' | 'in' | 'balance' {
+  const r = right(token)
+  const candidates: ['out' | 'in' | 'balance', number][] = [
+    ['out', cols.out], ['in', cols.in], ['balance', cols.balance],
+  ]
+  let best: 'out' | 'in' | 'balance' = 'balance'
+  let bestGap = Infinity
+  for (const [name, anchor] of candidates) {
+    const gap = Math.abs(r - anchor)
+    if (gap < bestGap) { bestGap = gap; best = name }
+  }
+  return best
 }
 
 export function parseBarclaysPdf(lines: PdfLine[]): BarclaysStatement {
@@ -243,16 +289,15 @@ export function parseBarclaysPdf(lines: PdfLine[]): BarclaysStatement {
       Math.abs(t.x - cols!.date) <= 8 && DATE_RE.test(t.text.trim()))
 
     // Descriptions and amounts are separated by position, not by guessing.
-    const outIn = (cols.out + cols.in) / 2
     const descParts = tokens
-      .filter(t => t !== dateTok && t.x < cols!.out - 20)
+      .filter(t => t !== dateTok && right(t) <= cols!.out - 30)
       .map(t => t.text.trim())
       .filter(Boolean)
     const description = descParts.join(' ').replace(/\s+/g, ' ').trim()
 
     const amounts = tokens
-      .filter(t => t.x >= cols!.out - 20)
-      .map(t => ({ value: toNumber(t.text.trim()), where: classify(t.x, cols!) }))
+      .filter(t => right(t) > cols!.out - 30)
+      .map(t => ({ value: toNumber(t.text.trim()), where: classify(t, cols!) }))
       .filter((a): a is { value: number; where: 'out' | 'in' | 'balance' } => a.value !== null)
 
     const balanceOnly = amounts.find(a => a.where === 'balance')

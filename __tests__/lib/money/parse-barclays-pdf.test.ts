@@ -3,34 +3,49 @@ import {
 } from '@/lib/money/parse-barclays-pdf'
 
 /**
- * Column positions are taken from a real statement:
- *   Date 58 · Description 92 · Money out 256 · Money in 318 · Balance 377
- * Values sit right-aligned under their heading, so a wide number starts
- * further left than a narrow one in the same column.
+ * Geometry measured from a real statement.
+ *
+ * The money columns are RIGHT-aligned: heading right-edges sit at 304, 360 and
+ * 412, and every value under them lines up with the same three edges. The left
+ * edge of a value moves with its width, which is why the parser keys on the
+ * right edge — see the narrow-value test below.
  */
+const W = (text: string) => Math.round(text.length * 4.3)
+/** A token right-aligned to `edge`, as the money columns are. */
+const at = (text: string, edge: number) =>
+  ({ text, x: edge - W(text), width: W(text) })
+/** A left-aligned token, as the date and description are. */
+const from = (text: string, x: number) => ({ text, x, width: W(text) })
+
+const OUT_EDGE = 304
+const IN_EDGE = 360
+const BAL_EDGE = 412
+
 const HEADER: PdfLine = {
   page: 1, y: 765,
   tokens: [
-    { text: 'Date', x: 58 }, { text: 'Description', x: 92 },
-    { text: 'Money out', x: 256 }, { text: 'Money in', x: 318 },
-    { text: 'Balance', x: 377 },
+    { text: 'Date', x: 58, width: 21 },
+    { text: 'Description', x: 92, width: 52 },
+    { text: 'Money out', x: 256, width: 48 },
+    { text: 'Money in', x: 318, width: 42 },
+    { text: 'Balance', x: 377, width: 35 },
   ],
 }
 
 let y = 750
-const line = (tokens: { text: string; x: number }[], page = 1): PdfLine =>
+const line = (tokens: { text: string; x: number; width: number }[], page = 1): PdfLine =>
   ({ page, y: (y -= 10), tokens })
 
 const reset = () => { y = 750 }
 
 const period = (text: string): PdfLine =>
-  ({ page: 1, y: 800, tokens: [{ text, x: 400 }] })
+  ({ page: 1, y: 800, tokens: [from(text, 400)] })
 
-const out = (v: string) => ({ text: v, x: 280 })
-const inn = (v: string) => ({ text: v, x: 326 })
-const bal = (v: string) => ({ text: v, x: 378 })
-const date = (v: string) => ({ text: v, x: 58 })
-const desc = (v: string) => ({ text: v, x: 109 })
+const out = (v: string) => at(v, OUT_EDGE)
+const inn = (v: string) => at(v, IN_EDGE)
+const bal = (v: string) => at(v, BAL_EDGE)
+const date = (v: string) => from(v, 58)
+const desc = (v: string) => from(v, 109)
 
 beforeEach(reset)
 
@@ -51,8 +66,8 @@ describe('statement period and years', () => {
 
   it('falls back to the statement-date pair', () => {
     const s = parseBarclaysPdf([
-      { page: 1, y: 810, tokens: [{ text: 'Statement date 02 Jan 2020', x: 400 }] },
-      { page: 1, y: 799, tokens: [{ text: 'Last statement 02 Oct 2019', x: 400 }] },
+      { page: 1, y: 810, tokens: [from('Statement date 02 Jan 2020', 400)] },
+      { page: 1, y: 799, tokens: [from('Last statement 02 Oct 2019', 400)] },
       HEADER,
     ])
     expect(s.period).toEqual({ from: '2019-10-02', to: '2020-01-02' })
@@ -99,14 +114,48 @@ describe('transaction rows', () => {
     ])
   })
 
-  it('decides the column by position, not by order on the line', () => {
-    // A wide money-out value starts further left than a narrow money-in one.
-    // Counting numbers would call the first one "out" regardless.
+  it('decides the column by right edge, not by order on the line', () => {
+    // A wide money-out value starts further left than a narrow money-in one, so
+    // counting numbers would call the first one "out" regardless.
     const s = withPeriod([
-      line([date('20 Apr'), desc('Big payment'), { text: '10,338.74', x: 268 }, bal('1,000.00')]),
-      line([date('21 Apr'), desc('Small receipt'), { text: '9.00', x: 334 }, bal('1,009.00')]),
+      line([date('20 Apr'), desc('Big payment'), out('10,338.74'), bal('1,000.00')]),
+      line([date('21 Apr'), desc('Small receipt'), inn('9.00'), bal('1,009.00')]),
     ])
     expect(s.rows.map(r => r.amount)).toEqual([-10338.74, 9])
+  })
+
+  it('reads a NARROW money-out value as money out', () => {
+    // The regression that broke eight real statements. "8.99" right-aligned in
+    // Money out has its LEFT edge at 287 — past the midpoint between the two
+    // left-hand anchors — so a left-edge rule called this card payment income.
+    // It was wrong by £8.99 and looked entirely plausible.
+    const s = withPeriod([
+      line([date('27 Sep'), desc('Card Payment to Amznmktplace'), out('8.99'), bal('3,163.86')]),
+    ])
+    expect(s.rows[0].amount).toBe(-8.99)
+  })
+
+  it('still reads a narrow refund as money in', () => {
+    const s = withPeriod([
+      line([date('28 Sep'), desc('Refund From Amz*GB DIY Store'), inn('4.21'), bal('3,238.91')]),
+    ])
+    expect(s.rows[0].amount).toBe(4.21)
+  })
+
+  it('ignores a stray Money in heading elsewhere on the header line', () => {
+    // Real statements print a summary box with its own "Money in"/"Money out"
+    // labels further right; picking those as the column anchors would put every
+    // value in the wrong column.
+    const s = parseBarclaysPdf([
+      period('02 Apr - 02 Jul 2021'),
+      { page: 1, y: 765, tokens: [
+        ...HEADER.tokens,
+        { text: 'Money in', x: 438, width: 36 },
+        { text: 'Money out', x: 438, width: 42 },
+      ] },
+      { page: 1, y: 740, tokens: [date('15 Apr'), desc('A payment'), out('96.57')] },
+    ])
+    expect(s.rows[0].amount).toBe(-96.57)
   })
 
   it('never treats the balance column as an amount', () => {
@@ -193,8 +242,8 @@ describe('transaction rows', () => {
 describe('documents that are not statements', () => {
   it('names a Statement of Fees instead of reporting nothing found', () => {
     const s = parseBarclaysPdf([
-      { page: 1, y: 800, tokens: [{ text: 'Statement of Fees', x: 60 }] },
-      { page: 1, y: 700, tokens: [{ text: 'From 03/02/2020 to 02/02/2021', x: 60 }] },
+      { page: 1, y: 800, tokens: [from('Statement of Fees', 60)] },
+      { page: 1, y: 700, tokens: [from('From 03/02/2020 to 02/02/2021', 60)] },
     ])
     expect(s.rows).toEqual([])
     expect(s.warnings[0]).toMatch(/statement of fees/i)
@@ -209,7 +258,7 @@ describe('documents that are not statements', () => {
 describe('account hints', () => {
   it('picks up the sort code and account number', () => {
     const s = parseBarclaysPdf([
-      { page: 1, y: 812, tokens: [{ text: 'Sort code 20-29-41 • Account number 40261467', x: 59 }] },
+      { page: 1, y: 812, tokens: [from('Sort code 20-29-41 • Account number 40261467', 59)] },
       period('02 Apr - 02 Jul 2021'), HEADER,
     ])
     expect(s.accountHints).toContainEqual({ sortCode: '20-29-41', accountNumber: '40261467' })
