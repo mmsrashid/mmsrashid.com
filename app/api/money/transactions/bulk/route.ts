@@ -107,7 +107,6 @@ export async function POST(req: Request) {
       txn_date: x.row.txn_date,
       description: x.row.description,
       amount: x.row.amount,
-      currency: 'GBP',
       external_id: x.row.external_id,
       dedupe_key: x.key,
     }))
