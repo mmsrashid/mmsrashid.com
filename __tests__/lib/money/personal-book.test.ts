@@ -1,5 +1,5 @@
 import {
-  buildPersonalPL, isPersonalRow, treatmentMap, taxYearOf,
+  buildPersonalPL, isPersonalRow, treatmentMap, taxYearOf, monthEnd,
 } from '@/lib/money/personal-book'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
 import type { PropertyTreatment } from '@/lib/money/property-types'
@@ -170,5 +170,33 @@ describe('buildPersonalPL', () => {
     expect(pl.month.totalOut).toBe(0)
     expect(pl.yearToDate.totalOut).toBe(0)
     expect(pl.heldForReviewCount).toBe(0)
+  })
+})
+
+describe('monthEnd', () => {
+  it('gives the real last day of the month', () => {
+    // Shown to the user, so "2025-04-31" is not good enough even though it
+    // compares correctly as a string.
+    expect(monthEnd('2025-04')).toBe('2025-04-30')
+    expect(monthEnd('2025-01')).toBe('2025-01-31')
+    expect(monthEnd('2025-02')).toBe('2025-02-28')
+  })
+
+  it('handles a leap year', () => {
+    expect(monthEnd('2024-02')).toBe('2024-02-29')
+  })
+
+  it('is used for the reported period, and still includes the whole month', () => {
+    const pl = buildPersonalPL(
+      [txn({ amount: -50, txn_date: '2024-02-29' })], CATS, ACCOUNTS, '2024-02',
+    )
+    expect(pl.taxYearPeriod.to).toBe('2024-02-29')
+    expect(pl.yearToDate.totalOut).toBe(50)
+  })
+
+  it('never runs past the end of the tax year', () => {
+    const pl = buildPersonalPL([], CATS, ACCOUNTS, '2026-03')
+    expect(pl.taxYearPeriod.to).toBe('2026-03-31')
+    expect(pl.taxYearPeriod.from).toBe('2025-04-06')
   })
 })

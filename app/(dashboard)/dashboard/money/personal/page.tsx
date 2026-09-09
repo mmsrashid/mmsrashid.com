@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import SpendingByCategory from '@/components/money/SpendingByCategory'
 import CategoryTrend, { type TrendPoint } from '@/components/money/CategoryTrend'
 import CategoryManager from '@/components/money/CategoryManager'
-import { buildPersonalPL } from '@/lib/money/personal-book'
+import { buildPersonalPL, isPersonalRow, treatmentMap } from '@/lib/money/personal-book'
 import type { MoneyCategory, MoneyTransaction } from '@/lib/money/spending-types'
 import type { MoneyAccount } from '@/lib/money/types'
 
@@ -29,11 +29,19 @@ export default function PersonalPage() {
       setTxns(rows)
       setCats(Array.isArray(c) ? c : [])
       setAccounts(Array.isArray(a) ? a : [])
-      // Open on the most recent month that actually has transactions. Defaulting
-      // to the calendar month shows a page of zeros whenever the latest statement
-      // is a month or two behind, which reads as "no data" rather than "not this
-      // month".
-      const latest = rows.map(r => r.txn_date.slice(0, 7)).sort().pop()
+      // Open on the most recent month that has PERSONAL activity.
+      //
+      // Defaulting to the calendar month shows a page of zeros whenever the
+      // latest statement is behind. Defaulting to the latest month of ANY
+      // activity had the same effect on this page once the books were split:
+      // the newest month held only property transactions, so the personal book
+      // opened empty and looked broken.
+      const treatments = treatmentMap(Array.isArray(c) ? c : [])
+      const personalMonths = rows
+        .filter(r => isPersonalRow(r, treatments))
+        .map(r => r.txn_date.slice(0, 7))
+        .sort()
+      const latest = personalMonths.pop() ?? rows.map(r => r.txn_date.slice(0, 7)).sort().pop()
       if (latest) setMonth(latest)
       setLoading(false)
     })

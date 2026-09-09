@@ -37,6 +37,15 @@ export function treatmentMap(
   return new Map(categories.map(c => [c.id, c.property_treatment ?? null] as const))
 }
 
+/** Last calendar day of a YYYY-MM month, as YYYY-MM-DD. */
+export function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  // Day 0 of the next month is the last day of this one, and it handles leap
+  // years without a table.
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return `${month}-${String(last).padStart(2, '0')}`
+}
+
 /** The UK tax year containing a YYYY-MM month, as "2025/26". */
 export function taxYearOf(month: string): string {
   const [y, m] = month.split('-').map(Number)
@@ -89,11 +98,10 @@ export function buildPersonalPL(
   // at an earlier month should show the year as it stood then, not a total that
   // includes everything after it.
   //
-  // -31 as the upper bound is deliberate. It is a string comparison, so
-  // "2025-02-31" correctly admits every February date without needing to know
-  // how long the month is.
-  const monthEnd = `${month}-31`
-  const to = monthEnd < bounds.to ? monthEnd : bounds.to
+  // A real calendar month end, not "-31": this date is shown to the user, and
+  // "2025-04-31" reads as a bug even though it compares correctly as a string.
+  const end = monthEnd(month)
+  const to = end < bounds.to ? end : bounds.to
 
   return {
     month: buildSpendingSummary(personal, categories, accounts, month),
