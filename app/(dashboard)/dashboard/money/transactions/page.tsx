@@ -62,16 +62,35 @@ export default function TransactionsPage() {
   /** Turns one correction into a rule, so the same merchant is right next time. */
   async function createRule(t: MoneyTransaction) {
     if (!t.category_id) return setError('Give it a category first, then create the rule.')
+
+    // The property tag travels with the rule.
+    //
+    // This was the bug: the request carried only category_id, so tagging a
+    // transaction to 4FLH and pressing Rule produced a rule that set the
+    // category and silently forgot the property — every future rent payment
+    // still needed tagging by hand, which is the whole thing the rule was for.
+    const propertyId = (t as MoneyTransaction & { property_id?: string | null }).property_id ?? null
+    const propertyCode = propertyId
+      ? properties.find(p => p.id === propertyId)?.code ?? null
+      : null
+
     const suggested = t.description.split(/\s{2,}|,/)[0].trim().slice(0, 40)
     const pattern = prompt(
-      'Any transaction whose description contains this text will get that category:',
+      propertyCode
+        ? `Any transaction containing this text will get that category and be assigned to ${propertyCode}:`
+        : 'Any transaction whose description contains this text will get that category:',
       suggested,
     )
     if (!pattern) return
 
     const res = await fetch('/api/money/rules', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pattern, match_type: 'contains', category_id: t.category_id }),
+      body: JSON.stringify({
+        pattern,
+        match_type: 'contains',
+        category_id: t.category_id,
+        property_id: propertyId,
+      }),
     })
     const d = await res.json()
     if (!res.ok) return setError(d.error || 'Could not create the rule.')
@@ -89,9 +108,9 @@ export default function TransactionsPage() {
     })
     const rd = await re.json()
     setNotice(
-      `Rule saved. ${rd.changed ?? 0} transaction(s) recategorised out of ${rd.examined ?? 0} ` +
-      `checked; ${rd.still_uncategorised ?? 0} still uncategorised. Anything you set by hand ` +
-      `was left alone.`,
+      `Rule saved${propertyCode ? ` (category and ${propertyCode})` : ''}. ` +
+      `${rd.changed ?? 0} transaction(s) updated out of ${rd.examined ?? 0} checked; ` +
+      `${rd.still_uncategorised ?? 0} still uncategorised. Anything you set by hand was left alone.`,
     )
     await load()
   }

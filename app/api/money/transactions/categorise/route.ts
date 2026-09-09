@@ -56,7 +56,15 @@ export async function POST(req: Request) {
     if (!ruled[i].category_id) continue
     const { error: e } = await supabase
       .from('money_transactions')
-      .update({ category_id: ruled[i].category_id, category_source: 'rule' })
+      .update({
+        category_id: ruled[i].category_id,
+        category_source: 'rule',
+        // The property tag has to come through here too. Omitting it meant a
+        // rule that assigned a property set only the category when run from
+        // this route — the same omission as the Rule button had, in a second
+        // place, which is what happens when two paths do the same job.
+        property_id: ruled[i].property_id ?? rows[i].property_id ?? null,
+      })
       .eq('id', rows[i].id)
     if (!e) byRule++
   }
