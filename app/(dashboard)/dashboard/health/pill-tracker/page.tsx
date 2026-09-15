@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import AdherenceTrend from '@/components/health/AdherenceTrend'
 import AdherenceByMedicine from '@/components/health/AdherenceByMedicine'
+import NonDailyDoses from '@/components/health/NonDailyDoses'
 import { isDaily, wasActiveOn } from '@/lib/health/adherence'
 import { localToday, toLocalDate } from '@/lib/local-date'
 
@@ -119,6 +120,9 @@ export default function PillTrackerPage() {
   // Only daily medicines, and only once they'd started, count toward adherence.
   // Otherwise a rescue spray and a 28-day injection read as missed doses.
   const dailyMeds = medicines.filter(isDaily)
+  // Injections on a cycle and rescue medication. Kept out of the adherence
+  // score, but shown in their own section — previously this list was computed
+  // and then never rendered, so there was no way to record an injection at all.
   const otherMeds = medicines.filter(m => !isDaily(m))
   const dueOn = (date: string) => dailyMeds.filter(m => wasActiveOn(m, date))
 
@@ -181,6 +185,14 @@ export default function PillTrackerPage() {
           </div>
         )}
       </div>
+
+      <NonDailyDoses
+        medicines={otherMeds}
+        logs={logs}
+        today={today}
+        onRecord={(id, date) => void toggle(id, date)}
+        saving={saving}
+      />
 
       {/* Adherence per medicine */}
       <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
