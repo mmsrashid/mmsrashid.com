@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { EmailMessage, EmailDetail } from '@/lib/email'
 
 function formatDate(iso: string) {
@@ -115,6 +115,59 @@ function ComposeModal({ replyTo, onClose, onSent }: ComposeModalProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * A sender's HTML, rendered where its CSS cannot reach the rest of the page.
+ *
+ * Marketing email routinely ships a <style> block with rules like
+ * `* { font: 16px Helvetica Neue }`. Injected straight into the document those
+ * apply to the whole dashboard, and one Zoho newsletter blanked the page
+ * outright - toolbar visible, everything under it gone. An iframe scopes them
+ * to the message.
+ *
+ * `sandbox` without `allow-scripts` also stops the email running JavaScript.
+ * `allow-same-origin` is there only so this component can measure the rendered
+ * content and size the frame to it; on its own it grants the email nothing,
+ * because nothing in it can execute.
+ */
+function MessageBody({ html }: { html: string }) {
+  const frame = useRef<HTMLIFrameElement>(null)
+  const [height, setHeight] = useState(240)
+
+  const srcDoc = `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<style>` +
+    `html,body{margin:0;padding:0;background:#fff;` +
+    `font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;` +
+    `color:#374151;overflow-wrap:anywhere}` +
+    /* A 600px marketing table on a 343px phone: let it shrink where it can. */
+    `img{max-width:100%;height:auto}table{max-width:100%}` +
+    `</style></head><body>${html}</body></html>`
+
+  const resize = useCallback(() => {
+    const doc = frame.current?.contentDocument
+    if (doc) setHeight(Math.max(120, doc.documentElement.scrollHeight))
+  }, [])
+
+  // Images land after load and change the height, so measure again for a few
+  // seconds rather than trusting the first number and leaving the message
+  // cut off at whatever height it had before its pictures arrived.
+  useEffect(() => {
+    const timers = [200, 800, 2500].map(ms => setTimeout(resize, ms))
+    return () => timers.forEach(clearTimeout)
+  }, [srcDoc, resize])
+
+  return (
+    <iframe
+      ref={frame}
+      title="Message body"
+      srcDoc={srcDoc}
+      sandbox="allow-same-origin"
+      onLoad={resize}
+      style={{ width: '100%', height, border: 0, display: 'block' }}
+    />
   )
 }
 
@@ -320,11 +373,7 @@ export default function EmailInbox() {
 
               <div className="border-t border-gray-100 pt-6">
                 {selected.html ? (
-                  <div
-                    className="prose prose-sm max-w-none text-gray-700"
-                    style={{ overflowX: 'auto', overflowWrap: 'anywhere' }}
-                    dangerouslySetInnerHTML={{ __html: selected.html }}
-                  />
+                  <MessageBody html={selected.html} />
                 ) : (
                   <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed" style={{ overflowWrap: 'anywhere' }}>
                     {selected.text}
