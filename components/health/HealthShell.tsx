@@ -39,12 +39,24 @@ export default function HealthShell({ children }: Props) {
 
   const fileInput = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const tabStripRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
   const router = useRouter()
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, uploading, pending.length])
+
+  // Bring the active tab into view on the scrolling strip. Without this the
+  // last tabs are reachable only by guessing that the strip scrolls.
+  useEffect(() => {
+    const strip = tabStripRef.current
+    const active = strip?.querySelector('[data-active="true"]') as HTMLElement | null
+    if (strip && active) {
+      const target = active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2
+      strip.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
+    }
+  }, [pathname])
 
   // Anything needing a decision opens the phone panel by itself. Pending items
   // that appear behind a collapsed panel would never be seen, and the upload
@@ -327,21 +339,44 @@ export default function HealthShell({ children }: Props) {
           </div>
         )}
 
-        {/* Eleven tabs at ~80px each need 880px. Below md they scroll sideways
-            rather than being clipped; -webkit-overflow-scrolling keeps the
-            momentum flick working on iOS. */}
+        {/* Eleven tabs need 880px. A sideways-scrolling strip was the first
+            attempt and it was wrong: Pill Tracker sat 760px in, and with the
+            scrollbar hidden nothing said the strip scrolled at all. On a phone
+            the tabs are a dropdown instead — every one reachable in one tap,
+            none off screen. */}
+        <div className="md:hidden" style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '8px 12px', flexShrink: 0 }}>
+          <select
+            value={TABS.find(t => pathname.startsWith(t.href))?.href ?? TABS[0].href}
+            onChange={e => router.push(e.target.value)}
+            aria-label="Health section"
+            /* 16px stops iOS Safari zooming the page on focus. */
+            style={{
+              width: '100%', border: '1px solid #d1d5db', borderRadius: 8,
+              padding: '9px 10px', fontSize: 16, fontWeight: 600, background: '#fff',
+              color: '#111',
+            }}
+          >
+            {TABS.map(tab => (
+              <option key={tab.href} value={tab.href}>{tab.icon}  {tab.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Tablet and up: the icon strip. Still scrollable, because 880px of
+            tabs does not fit 768px either — but here the active tab is scrolled
+            into view so it is never the one you cannot find. */}
         <div
+          ref={tabStripRef}
           style={{
-            background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex',
+            background: '#fff', borderBottom: '1px solid #e5e7eb',
             flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
-            scrollbarWidth: 'none',
           }}
-          className="px-3 md:px-5"
+          className="hidden md:flex px-5"
         >
           {TABS.map(tab => {
             const active = pathname.startsWith(tab.href)
             return (
-              <button key={tab.href} onClick={() => router.push(tab.href)} style={{
+              <button key={tab.href} onClick={() => router.push(tab.href)} data-active={active} style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 padding: '9px 14px', cursor: 'pointer', border: 'none', background: 'none',
                 borderBottom: active ? '2px solid #111' : '2px solid transparent',
