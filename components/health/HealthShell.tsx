@@ -271,13 +271,17 @@ export default function HealthShell({ children }: Props) {
   }
 
   return (
-    <div style={{ height: '100%', overflow: 'hidden' }} className="flex flex-col md:flex-row">
-      {/* JARVIS sidebar — tablet and up. On a phone this took 270 of 375px and
-          left the health pages unreachable, so below md it becomes the
-          collapsible panel further down. */}
+    <div style={{ height: '100%', overflow: 'hidden' }} className="flex flex-col lg:flex-row">
+      {/* JARVIS sidebar — desktop only. On a phone this took 270 of 375px and
+          left the health pages unreachable, so below lg it becomes the
+          collapsible panel further down.
+
+          lg and not md: the dashboard's own nav is already 224px from md, so
+          at 768px this sidebar on top of it left 274px of content — less than
+          a phone gets. A second sidebar only earns its space from 1024px. */}
       <div
         {...dropHandlers}
-        className="hidden md:flex"
+        className="hidden lg:flex"
         style={{
           width,
           background: '#fff',
@@ -307,13 +311,13 @@ export default function HealthShell({ children }: Props) {
       {/* Main area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', height: 44, flexShrink: 0, gap: 8 }}
-          className="px-3 md:px-5">
+          className="px-3 lg:px-5">
           <span style={{ fontSize: 14, fontWeight: 700 }}>Health Records</span>
           {/* Phone-only JARVIS toggle. A second floating button would fight the
               global orb, so the panel opens in place instead. */}
           <button
             onClick={() => setPanelOpen(o => !o)}
-            className="md:hidden"
+            className="lg:hidden"
             style={{
               marginLeft: 'auto', border: '1px solid #dbeafe', background: '#eff6ff',
               color: '#1e40af', borderRadius: 8, padding: '5px 10px',
@@ -328,7 +332,7 @@ export default function HealthShell({ children }: Props) {
         {panelOpen && (
           <div
             {...dropHandlers}
-            className="md:hidden"
+            className="lg:hidden"
             style={{
               background: '#fff', borderBottom: '1px solid #e5e7eb', flexShrink: 0,
               display: 'flex', flexDirection: 'column', height: '55vh',
@@ -344,7 +348,7 @@ export default function HealthShell({ children }: Props) {
             scrollbar hidden nothing said the strip scrolled at all. On a phone
             the tabs are a dropdown instead — every one reachable in one tap,
             none off screen. */}
-        <div className="md:hidden" style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '8px 12px', flexShrink: 0 }}>
+        <div className="lg:hidden" style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '8px 12px', flexShrink: 0 }}>
           <select
             value={TABS.find(t => pathname.startsWith(t.href))?.href ?? TABS[0].href}
             onChange={e => router.push(e.target.value)}
@@ -371,7 +375,7 @@ export default function HealthShell({ children }: Props) {
             background: '#fff', borderBottom: '1px solid #e5e7eb',
             flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
           }}
-          className="hidden md:flex px-5"
+          className="hidden lg:flex px-5"
         >
           {TABS.map(tab => {
             const active = pathname.startsWith(tab.href)
@@ -392,7 +396,7 @@ export default function HealthShell({ children }: Props) {
         {/* key remounts the page so it refetches after an ingest.
             Bottom padding on a phone keeps the last row clear of the floating
             JARVIS orb, which otherwise sits on top of it. */}
-        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }} className="pb-20 md:pb-0">
+        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }} className="pb-20 lg:pb-0">
           {children}
         </div>
       </div>

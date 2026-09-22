@@ -64,7 +64,7 @@ function ComposeModal({ replyTo, onClose, onSent }: ComposeModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center md:justify-end p-3 md:p-6 pointer-events-none">
+    <div className="fixed inset-0 z-50 flex items-end justify-center lg:justify-end p-3 lg:p-6 pointer-events-none">
       <div className="pointer-events-auto w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 rounded-t-xl">
           <span className="text-sm font-semibold text-gray-800">{replyTo ? 'Reply' : 'New Message'}</span>
@@ -76,7 +76,7 @@ function ComposeModal({ replyTo, onClose, onSent }: ComposeModalProps) {
             <input
               value={to}
               onChange={e => setTo(e.target.value)}
-              className="flex-1 text-base md:text-sm text-gray-900 outline-none min-w-0"
+              className="flex-1 text-base lg:text-sm text-gray-900 outline-none min-w-0"
               placeholder="recipient@example.com"
             />
           </div>
@@ -85,7 +85,7 @@ function ComposeModal({ replyTo, onClose, onSent }: ComposeModalProps) {
             <input
               value={subject}
               onChange={e => setSubject(e.target.value)}
-              className="flex-1 text-base md:text-sm text-gray-900 outline-none min-w-0"
+              className="flex-1 text-base lg:text-sm text-gray-900 outline-none min-w-0"
               placeholder="Subject"
             />
           </div>
@@ -93,7 +93,7 @@ function ComposeModal({ replyTo, onClose, onSent }: ComposeModalProps) {
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
-          className="flex-1 px-4 py-3 text-base md:text-sm text-gray-900 outline-none resize-none min-h-48"
+          className="flex-1 px-4 py-3 text-base lg:text-sm text-gray-900 outline-none resize-none min-h-48"
           placeholder={replyTo ? `Reply to ${replyTo.fromName}…` : 'Write your message…'}
         />
         {replyTo && (
@@ -240,7 +240,7 @@ export default function EmailInbox() {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-100">
+      <div className="flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-gray-900">Inbox</h1>
           {unread > 0 && (
@@ -266,7 +266,7 @@ export default function EmailInbox() {
       {/* Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Message list */}
-        <div className={`w-full md:w-80 md:flex-shrink-0 border-r border-gray-100 overflow-y-auto ${showDetail ? 'hidden md:block' : ''}`}>
+        <div className={`w-full lg:w-80 lg:flex-shrink-0 border-r border-gray-100 overflow-y-auto ${showDetail ? 'hidden lg:block' : ''}`}>
           {loading && (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
               Loading…
@@ -313,7 +313,7 @@ export default function EmailInbox() {
         </div>
 
         {/* Message detail */}
-        <div className={`flex-1 overflow-y-auto min-w-0 ${showDetail ? '' : 'hidden md:block'}`}>
+        <div className={`flex-1 overflow-y-auto min-w-0 ${showDetail ? '' : 'hidden lg:block'}`}>
           {loadingDetail && (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
               Loading message…
@@ -325,17 +325,17 @@ export default function EmailInbox() {
             </div>
           )}
           {!loadingDetail && selected && (
-            <div className="max-w-2xl mx-auto px-4 md:px-8 py-5 md:py-8">
+            <div className="max-w-2xl mx-auto px-4 lg:px-8 py-5 lg:py-8">
               <button
                 onClick={() => setSelected(null)}
-                className="md:hidden mb-4 text-sm text-gray-500 hover:text-gray-900"
+                className="lg:hidden mb-4 text-sm text-gray-500 hover:text-gray-900"
               >
                 ← Inbox
               </button>
               {/* Header */}
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">{selected.subject}</h2>
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 lg:gap-4">
                   <div className="flex items-start gap-3">
                     <Avatar name={selected.fromName} />
                     <div>

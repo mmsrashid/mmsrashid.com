@@ -292,7 +292,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div style={{ height: '100%', background: '#fff', color: '#111', overflow: 'hidden' }}
-      className="flex flex-col md:flex-row"
+      className="flex flex-col lg:flex-row"
       onDragOver={e => { e.preventDefault(); setDragging(true) }}
       onDragLeave={() => setDragging(false)}
       onDrop={e => {
@@ -300,10 +300,15 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         if (e.dataTransfer.files?.length) stage(e.dataTransfer.files)
       }}
     >
-      {/* JARVIS sidebar - tablet and up. On a phone it took 300 of 375px and
-          squeezed every table into the remaining sliver, so below md it
-          becomes the collapsible panel further down. */}
-      <aside className="hidden md:flex"
+      {/* JARVIS sidebar - desktop only. On a phone it took 300 of 375px and
+          squeezed every table into the remaining sliver, so below lg it
+          becomes the collapsible panel further down.
+
+          lg and not md: the dashboard's own nav is already 224px from md, so
+          at 768px a 300px sidebar on top of it left the tables 244px - less
+          than a phone gets, and the tab strip needed 481 of it. A second
+          sidebar only earns its space from 1024px up. */}
+      <aside className="hidden lg:flex"
         style={{ width: 300, borderRight: '1px solid #e5e7eb', flexDirection: 'column', flexShrink: 0 }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #e5e7eb', fontSize: 12, fontWeight: 700 }}>
           ◉ JARVIS
@@ -315,14 +320,14 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         {/* Side padding comes from the class, so it can differ by screen.
             A `padding` shorthand here would set padding-left as well and beat
             it — inline styles win over classes. */}
-        <div className="px-4 md:px-6"
+        <div className="px-4 lg:px-6"
           style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 14, paddingBottom: 10, flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Money</span>
           {/* Phone-only JARVIS toggle. A second floating button would fight the
               global orb, so the panel opens in place instead. */}
           <button
             onClick={() => setPanelOpen(o => !o)}
-            className="md:hidden"
+            className="lg:hidden"
             style={{
               marginLeft: 'auto', border: '1px solid #dbeafe', background: '#eff6ff',
               color: '#1e40af', borderRadius: 8, padding: '5px 10px',
@@ -336,7 +341,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         {/* Phone JARVIS panel, in the flow rather than over the content. */}
         {panelOpen && (
           <div
-            className="md:hidden"
+            className="lg:hidden"
             style={{
               borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
               display: 'flex', flexDirection: 'column', height: '55vh', flexShrink: 0,
@@ -349,7 +354,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         {/* Six tabs need 540px. Rather than a strip you have to discover
             scrolls sideways, on a phone they are a dropdown: every section
             reachable in one tap, none of them off screen. */}
-        <div className="md:hidden" style={{ borderBottom: '1px solid #e5e7eb', padding: '0 16px 10px', flexShrink: 0 }}>
+        <div className="lg:hidden" style={{ borderBottom: '1px solid #e5e7eb', padding: '0 16px 10px', flexShrink: 0 }}>
           <select
             value={TABS.find(t => pathname.startsWith(t.href))?.href ?? TABS[0].href}
             onChange={e => router.push(e.target.value)}
@@ -366,7 +371,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
           </select>
         </div>
 
-        <nav className="hidden md:flex" style={{ gap: 4, padding: '10px 18px', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
+        <nav className="hidden lg:flex" style={{ gap: 4, padding: '10px 18px', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
           {TABS.map(t => {
             const active = pathname === t.href
             return (
@@ -390,7 +395,7 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         {/* key remounts the page so it refetches after an import.
             Bottom padding on a phone keeps the last row clear of the floating
             JARVIS orb, which otherwise sits on top of it. */}
-        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }} className="pb-20 md:pb-0">{children}</div>
+        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }} className="pb-20 lg:pb-0">{children}</div>
       </main>
     </div>
   )

@@ -15,7 +15,7 @@ export default function MessagesPage() {
   return (
     <div style={{ height: '100%', overflow: 'hidden' }} className="flex">
       <div
-        className={`${selected ? 'hidden md:block' : 'block'} w-full md:w-[280px] shrink-0`}
+        className={`${selected ? 'hidden lg:block' : 'block'} w-full lg:w-[280px] shrink-0`}
         style={{ borderRight: '1px solid #e5e7eb', overflowY: 'auto', background: '#fff' }}
       >
         <div style={{ padding: '12px 14px', borderBottom: '1px solid #f3f4f6', fontSize: 13, fontWeight: 700 }}>Health Messages</div>
@@ -36,7 +36,7 @@ export default function MessagesPage() {
         ))}
       </div>
       <div
-        className={`${selected ? 'block' : 'hidden md:block'} flex-1 min-w-0 p-4 md:p-6`}
+        className={`${selected ? 'block' : 'hidden lg:block'} flex-1 min-w-0 p-4 lg:p-6`}
         style={{ overflowY: 'auto', background: '#fafafa' }}
       >
         {!selected ? (
@@ -47,7 +47,7 @@ export default function MessagesPage() {
                 route from a message to the other messages. */}
             <button
               onClick={() => setSelected(null)}
-              className="md:hidden"
+              className="lg:hidden"
               style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, padding: '5px 10px', fontSize: 12, marginBottom: 12, cursor: 'pointer' }}
             >
               ← All messages
