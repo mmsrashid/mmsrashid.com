@@ -22,9 +22,9 @@ export default async function CalendarPage() {
   }
 
   return (
-    <div className="p-6 h-full flex flex-col overflow-hidden">
+    <div className="p-4 md:p-6 h-full flex flex-col overflow-hidden">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">Calendar</h1>
         <p className="text-sm text-gray-500 mt-0.5">
           {events.length} events from personal &amp; work calendars
         </p>

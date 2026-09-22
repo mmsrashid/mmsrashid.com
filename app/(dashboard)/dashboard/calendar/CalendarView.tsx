@@ -70,10 +70,10 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 mb-3 md:mb-4">
         <div className="flex items-center gap-3">
           <button onClick={prevMonth} className="p-1.5 rounded hover:bg-gray-100 text-gray-600">‹</button>
-          <h2 className="text-lg font-semibold text-gray-900 w-44 text-center">
+          <h2 className="text-base md:text-lg font-semibold text-gray-900 w-36 md:w-44 text-center">
             {MONTHS[month]} {year}
           </h2>
           <button onClick={nextMonth} className="p-1.5 rounded hover:bg-gray-100 text-gray-600">›</button>
@@ -84,8 +84,8 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
             Today
           </button>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 text-xs text-gray-500">
+        <div className="flex items-center gap-4 ml-auto">
+          <div className="hidden md:flex items-center gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#4285F4] inline-block"/>Personal</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#34A853] inline-block"/>Work</span>
           </div>
@@ -104,9 +104,9 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
       </div>
 
       {view === 'month' ? (
-        <div className="flex gap-4 flex-1 min-h-0">
+        <div className="flex flex-col md:flex-row gap-3 md:gap-4 flex-1 min-h-0 overflow-y-auto md:overflow-visible">
           {/* Grid */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="grid grid-cols-7 mb-1">
               {DAYS.map(d => (
                 <div key={d} className="text-center text-xs font-medium text-gray-400 py-1">{d}</div>
@@ -114,7 +114,7 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
             </div>
             <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden flex-1">
               {cells.map((day, i) => {
-                if (!day) return <div key={i} className="bg-gray-50 h-24" />
+                if (!day) return <div key={i} className="bg-gray-50 h-16 md:h-24" />
                 const dayEvents = eventsForDay(day)
                 const today = sameDay(day, new Date())
                 const selected = selectedDay && sameDay(day, selectedDay)
@@ -122,13 +122,21 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
                   <div
                     key={i}
                     onClick={() => setSelectedDay(day)}
-                    className={`bg-white h-24 p-1 cursor-pointer hover:bg-blue-50 transition-colors ${selected ? 'ring-2 ring-inset ring-blue-500' : ''}`}
+                    className={`bg-white h-16 md:h-24 p-1 cursor-pointer hover:bg-blue-50 transition-colors ${selected ? 'ring-2 ring-inset ring-blue-500' : ''}`}
                   >
-                    <div className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-0.5
+                    <div className={`text-xs font-medium w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full mb-0.5
                       ${today ? 'bg-gray-900 text-white' : 'text-gray-700'}`}>
                       {day.getDate()}
                     </div>
-                    <div className="space-y-0.5 overflow-hidden">
+                    {dayEvents.length > 0 && (
+                      <div className="md:hidden flex flex-wrap gap-0.5 justify-center">
+                        {dayEvents.slice(0, 4).map(e => (
+                          <span key={e.id} className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: e.color }} />
+                        ))}
+                      </div>
+                    )}
+                    <div className="hidden md:block space-y-0.5 overflow-hidden">
                       {dayEvents.slice(0, 3).map(e => (
                         <div
                           key={e.id}
@@ -149,7 +157,7 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
           </div>
 
           {/* Day detail panel */}
-          <div className="w-72 shrink-0 border border-gray-200 rounded-lg p-3 overflow-y-auto">
+          <div className="w-full md:w-72 md:shrink-0 border border-gray-200 rounded-lg p-3 md:overflow-y-auto">
             {selectedDay ? (
               <>
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">

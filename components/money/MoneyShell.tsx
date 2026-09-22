@@ -32,6 +32,9 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
   // re-upload, which failed identically.
   const [accounts, setAccounts] = useState<MoneyAccount[]>([])
   const [staged, setStaged] = useState<StagedFile[]>([])
+  // Closed by default on a phone: the Money page is what you came for. On a
+  // 375px screen the sidebar took 300 of it and left the tables unreadable.
+  const [panelOpen, setPanelOpen] = useState(false)
   // Bumping this remounts the tab subtree so its useEffect refetches.
   const [dataVersion, setDataVersion] = useState(0)
 
@@ -43,6 +46,13 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, uploading, pending.length])
+
+  // A staged file or a pending balance needs a decision. Behind a collapsed
+  // panel it would never be seen, and the upload would look as though it had
+  // silently done nothing.
+  useEffect(() => {
+    if (pending.length > 0 || staged.length > 0 || uploading) setPanelOpen(true)
+  }, [pending.length, staged.length, uploading])
 
   useEffect(() => {
     fetch('/api/money/accounts')
@@ -210,8 +220,79 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
     }
   }
 
+  /**
+   * The chat, the import queue and anything waiting on a decision.
+   *
+   * One definition used by both the desktop sidebar and the phone panel. A
+   * staged statement has to be reachable on either, and two copies of this
+   * would drift apart.
+   */
+  const conversation = (
+    <>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            background: m.role === 'ai' ? '#eff6ff' : '#f3f4f6',
+            borderRadius: 10, padding: '8px 10px', marginBottom: 8, fontSize: 12, lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+          }}>{m.text}</div>
+        ))}
+        {pending.length > 0 && (
+          <PendingReview
+            rows={pending}
+            documentId={pendingDocId}
+            onDone={saved => {
+              setPending([])
+              setPendingDocId(null)
+              say(saved > 0 ? `Saved ${saved} more.` : 'Nothing else saved.')
+              setDataVersion(v => v + 1)
+            }}
+          />
+        )}
+        <ImportQueue
+          staged={staged}
+          accounts={accounts}
+          busy={uploading}
+          onSetAccount={(id, accountId) =>
+            setStaged(prev => prev.map(f => (f.id === id ? { ...f, accountId } : f)))}
+          onRemove={id => setStaged(prev => prev.filter(f => f.id !== id))}
+          onImport={runQueue}
+          onClear={() => setStaged([])}
+        />
+        {(loading || uploading) && (
+          <div style={{ fontSize: 11, color: '#9ca3af' }}>{uploading ? 'Importing…' : 'Thinking…'}</div>
+        )}
+      </div>
+      <div style={{ padding: 10, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6 }}>
+        <button onClick={() => fileInput.current?.click()} title="Attach a statement, screenshot or CSV"
+          style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, padding: '8px 11px', cursor: 'pointer', flexShrink: 0 }}>
+          📎
+        </button>
+        <input ref={fileInput} type="file" multiple style={{ display: 'none' }}
+          accept="image/*,application/pdf,.csv,text/csv"
+          onChange={e => { if (e.target.files?.length) stage(e.target.files); e.target.value = '' }} />
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') void send() }}
+          onPaste={e => {
+            if (e.clipboardData.files.length) { e.preventDefault(); stage(e.clipboardData.files) }
+          }}
+          placeholder="Ask, or paste a screenshot…"
+          /* 16px: iOS Safari zooms the whole page in when a focused input is
+             smaller than that, and the layout never recovers. */
+          style={{ flex: 1, minWidth: 0, border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 10px', fontSize: 16 }}
+        />
+      </div>
+    </>
+  )
+
+  // What is waiting on the user, for the phone toggle's badge.
+  const waiting = pending.length + staged.length
+
   return (
-    <div style={{ display: 'flex', height: '100%', background: '#fff', color: '#111' }}
+    <div style={{ height: '100%', background: '#fff', color: '#111', overflow: 'hidden' }}
+      className="flex flex-col md:flex-row"
       onDragOver={e => { e.preventDefault(); setDragging(true) }}
       onDragLeave={() => setDragging(false)}
       onDrop={e => {
@@ -219,68 +300,70 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
         if (e.dataTransfer.files?.length) stage(e.dataTransfer.files)
       }}
     >
-      <aside style={{ width: 300, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
+      {/* JARVIS sidebar - tablet and up. On a phone it took 300 of 375px and
+          squeezed every table into the remaining sliver, so below md it
+          becomes the collapsible panel further down. */}
+      <aside className="hidden md:flex"
+        style={{ width: 300, borderRight: '1px solid #e5e7eb', flexDirection: 'column', flexShrink: 0 }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #e5e7eb', fontSize: 12, fontWeight: 700 }}>
           ◉ JARVIS
         </div>
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-          {messages.map((m, i) => (
-            <div key={i} style={{
-              background: m.role === 'ai' ? '#eff6ff' : '#f3f4f6',
-              borderRadius: 10, padding: '8px 10px', marginBottom: 8, fontSize: 12, lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
-            }}>{m.text}</div>
-          ))}
-          {pending.length > 0 && (
-            <PendingReview
-              rows={pending}
-              documentId={pendingDocId}
-              onDone={saved => {
-                setPending([])
-                setPendingDocId(null)
-                say(saved > 0 ? `Saved ${saved} more.` : 'Nothing else saved.')
-                setDataVersion(v => v + 1)
-              }}
-            />
-          )}
-          <ImportQueue
-            staged={staged}
-            accounts={accounts}
-            busy={uploading}
-            onSetAccount={(id, accountId) =>
-              setStaged(prev => prev.map(f => (f.id === id ? { ...f, accountId } : f)))}
-            onRemove={id => setStaged(prev => prev.filter(f => f.id !== id))}
-            onImport={runQueue}
-            onClear={() => setStaged([])}
-          />
-          {(loading || uploading) && (
-            <div style={{ fontSize: 11, color: '#9ca3af' }}>{uploading ? 'Importing…' : 'Thinking…'}</div>
-          )}
-        </div>
-        <div style={{ padding: 10, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6 }}>
-          <button onClick={() => fileInput.current?.click()} title="Attach a statement, screenshot or CSV"
-            style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, padding: '6px 9px', cursor: 'pointer' }}>
-            📎
-          </button>
-          <input ref={fileInput} type="file" multiple style={{ display: 'none' }}
-            accept="image/*,application/pdf,.csv,text/csv"
-            onChange={e => { if (e.target.files?.length) stage(e.target.files); e.target.value = '' }} />
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') void send() }}
-            onPaste={e => {
-              if (e.clipboardData.files.length) { e.preventDefault(); stage(e.clipboardData.files) }
-            }}
-            placeholder="Ask, or paste a screenshot…"
-            style={{ flex: 1, border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 10px', fontSize: 12 }}
-          />
-        </div>
+        {conversation}
       </aside>
 
-      <main style={{ flex: 1, overflowY: 'auto' }}>
-        <div style={{ padding: '14px 22px 0', fontSize: 15, fontWeight: 700 }}>Money</div>
-        <nav style={{ display: 'flex', gap: 4, padding: '10px 18px', borderBottom: '1px solid #e5e7eb' }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        <div className="px-4 md:px-6"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 0 10px', flexShrink: 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>Money</span>
+          {/* Phone-only JARVIS toggle. A second floating button would fight the
+              global orb, so the panel opens in place instead. */}
+          <button
+            onClick={() => setPanelOpen(o => !o)}
+            className="md:hidden"
+            style={{
+              marginLeft: 'auto', border: '1px solid #dbeafe', background: '#eff6ff',
+              color: '#1e40af', borderRadius: 8, padding: '5px 10px',
+              fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            ◉ JARVIS{waiting > 0 ? ` · ${waiting}` : ''} {panelOpen ? '▴' : '▾'}
+          </button>
+        </div>
+
+        {/* Phone JARVIS panel, in the flow rather than over the content. */}
+        {panelOpen && (
+          <div
+            className="md:hidden"
+            style={{
+              borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+              display: 'flex', flexDirection: 'column', height: '55vh', flexShrink: 0,
+            }}
+          >
+            {conversation}
+          </div>
+        )}
+
+        {/* Six tabs need 540px. Rather than a strip you have to discover
+            scrolls sideways, on a phone they are a dropdown: every section
+            reachable in one tap, none of them off screen. */}
+        <div className="md:hidden" style={{ borderBottom: '1px solid #e5e7eb', padding: '0 16px 10px', flexShrink: 0 }}>
+          <select
+            value={TABS.find(t => pathname.startsWith(t.href))?.href ?? TABS[0].href}
+            onChange={e => router.push(e.target.value)}
+            aria-label="Money section"
+            /* 16px stops iOS Safari zooming the page on focus. */
+            style={{
+              width: '100%', border: '1px solid #d1d5db', borderRadius: 8,
+              padding: '9px 10px', fontSize: 16, fontWeight: 600, background: '#fff', color: '#111',
+            }}
+          >
+            {TABS.map(t => (
+              <option key={t.href} value={t.href}>{t.icon}  {t.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <nav className="hidden md:flex" style={{ gap: 4, padding: '10px 18px', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
           {TABS.map(t => {
             const active = pathname === t.href
             return (
@@ -297,11 +380,14 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
           })}
         </nav>
         {dragging && (
-          <div style={{ margin: 18, padding: 20, border: '2px dashed #3b82f6', borderRadius: 12, textAlign: 'center', fontSize: 12, color: '#3b82f6' }}>
+          <div style={{ margin: 18, padding: 20, border: '2px dashed #3b82f6', borderRadius: 12, textAlign: 'center', fontSize: 12, color: '#3b82f6', flexShrink: 0 }}>
             Drop the statement to file it
           </div>
         )}
-        <div key={dataVersion}>{children}</div>
+        {/* key remounts the page so it refetches after an import.
+            Bottom padding on a phone keeps the last row clear of the floating
+            JARVIS orb, which otherwise sits on top of it. */}
+        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }} className="pb-20 md:pb-0">{children}</div>
       </main>
     </div>
   )
