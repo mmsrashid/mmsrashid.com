@@ -105,8 +105,11 @@ export default function CalendarView({ events, initialYear, initialMonth }: Prop
 
       {view === 'month' ? (
         <div className="flex flex-col md:flex-row gap-3 md:gap-4 flex-1 min-h-0 overflow-y-auto md:overflow-visible">
-          {/* Grid */}
-          <div className="flex-1 min-w-0">
+          {/* Grid. flex-1 only from md, where the row layout needs it to take
+              the width beside the panel. Stacked on a phone it would grow
+              downwards instead and push the day panel to the bottom of the
+              screen, leaving a gap where a tapped day's events should be. */}
+          <div className="w-full shrink-0 md:w-auto md:flex-1 min-w-0">
             <div className="grid grid-cols-7 mb-1">
               {DAYS.map(d => (
                 <div key={d} className="text-center text-xs font-medium text-gray-400 py-1">{d}</div>
