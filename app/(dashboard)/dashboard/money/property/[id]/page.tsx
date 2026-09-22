@@ -94,6 +94,10 @@ export default function PropertyDetailPage() {
   const card: React.CSSProperties = {
     background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12,
     padding: '14px 18px', marginBottom: 16,
+    // The by-month table is seven columns of running totals. Left to itself
+    // it pushed the whole page sideways on a phone; it scrolls inside its
+    // own card instead. No effect on a desktop, where it fits.
+    overflowX: 'auto',
   }
   const input: React.CSSProperties = {
     border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 10px', fontSize: 12,

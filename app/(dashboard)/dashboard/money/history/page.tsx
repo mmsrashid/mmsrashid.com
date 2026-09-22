@@ -46,7 +46,7 @@ export default function MoneyHistoryPage() {
   return (
     <div style={{ padding: '20px 22px' }}>
       {error && <p style={{ fontSize: 12, color: '#991b1b', marginBottom: 10 }}>{error}</p>}
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>

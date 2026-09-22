@@ -312,8 +312,11 @@ export default function MoneyShell({ children }: { children: React.ReactNode }) 
       </aside>
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        {/* Side padding comes from the class, so it can differ by screen.
+            A `padding` shorthand here would set padding-left as well and beat
+            it — inline styles win over classes. */}
         <div className="px-4 md:px-6"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 0 10px', flexShrink: 0 }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 14, paddingBottom: 10, flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Money</span>
           {/* Phone-only JARVIS toggle. A second floating button would fight the
               global orb, so the panel opens in place instead. */}
