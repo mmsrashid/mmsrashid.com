@@ -354,8 +354,10 @@ export default function HealthShell({ children }: Props) {
             )
           })}
         </div>
-        {/* key remounts the page so it refetches after an ingest */}
-        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }}>
+        {/* key remounts the page so it refetches after an ingest.
+            Bottom padding on a phone keeps the last row clear of the floating
+            JARVIS orb, which otherwise sits on top of it. */}
+        <div key={dataVersion} style={{ flex: 1, overflowY: 'auto' }} className="pb-20 md:pb-0">
           {children}
         </div>
       </div>
