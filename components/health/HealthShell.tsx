@@ -23,6 +23,8 @@ interface Props { children: React.ReactNode }
 
 export default function HealthShell({ children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Closed by default on a phone: the health page is what you came for.
+  const [panelOpen, setPanelOpen] = useState(false)
   const [messages, setMessages] = useState<Msg[]>([
     { role: 'ai', text: "Good day. I'm JARVIS, your health assistant. Ask me anything, or drop in a document or screenshot and I'll file it." },
   ])
@@ -43,6 +45,13 @@ export default function HealthShell({ children }: Props) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, uploading, pending.length])
+
+  // Anything needing a decision opens the phone panel by itself. Pending items
+  // that appear behind a collapsed panel would never be seen, and the upload
+  // would look as though it had silently done nothing.
+  useEffect(() => {
+    if (pending.length > 0 || uploading) setPanelOpen(true)
+  }, [pending.length, uploading])
 
   const say = (text: string) => setMessages(m => [...m, { role: 'ai', text }])
 
@@ -168,23 +177,99 @@ export default function HealthShell({ children }: Props) {
 
   const width = !sidebarOpen ? 44 : pending.length ? 400 : 270
 
+  /**
+   * The chat, attach button and pending-review list.
+   *
+   * One definition used by both the desktop sidebar and the phone panel. An
+   * upload or a pending decision has to be reachable on either, and two copies
+   * of this would drift.
+   */
+  const conversation = (
+    <>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            fontSize: 12, lineHeight: 1.5, padding: '7px 9px', borderRadius: 10, maxWidth: '95%',
+            whiteSpace: 'pre-wrap',
+            background: m.role === 'ai' ? '#eff6ff' : '#f3f4f6',
+            border: `1px solid ${m.role === 'ai' ? '#dbeafe' : '#e5e7eb'}`,
+            color: m.role === 'ai' ? '#1e40af' : '#374151',
+            alignSelf: m.role === 'ai' ? 'flex-start' : 'flex-end',
+          }}>
+            {m.text || (loading && m.role === 'ai' ? '…' : '')}
+          </div>
+        ))}
+
+        {uploading && (
+          <div style={{ fontSize: 12, color: '#6b7280', padding: '7px 9px' }}>Reading the document…</div>
+        )}
+
+        {pending.length > 0 && (
+          <PendingReview
+            items={pending}
+            onApply={applyPending}
+            onDismiss={() => { setPending([]); say('Discarded the unconfirmed items.') }}
+          />
+        )}
+      </div>
+
+      {dragging && (
+        <div style={{ fontSize: 10, color: '#2563eb', fontWeight: 600, textAlign: 'center', padding: '0 10px 6px' }}>Drop to file it</div>
+      )}
+
+      <div style={{ padding: 8, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button
+          onClick={() => fileInput.current?.click()}
+          title="Attach a PDF or image"
+          style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, color: '#6b7280', cursor: 'pointer', fontSize: 15, padding: '8px 11px', flexShrink: 0 }}
+        >📎</button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) void upload(f)
+            e.target.value = ''
+          }}
+          style={{ display: 'none' }}
+        />
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && send()}
+          placeholder="Ask, or paste a screenshot…"
+          /* 16px: iOS Safari zooms the whole page in when a focused input is
+             smaller than that, and the layout never recovers. */
+          style={{ flex: 1, minWidth: 0, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '9px 10px', color: '#111', fontSize: 16, outline: 'none' }}
+        />
+      </div>
+    </>
+  )
+
+  const dropHandlers = {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDragging(true) },
+    onDragLeave: () => setDragging(false),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragging(false)
+      const f = e.dataTransfer.files?.[0]
+      if (f) void upload(f)
+    },
+  }
+
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* JARVIS sidebar */}
+    <div style={{ height: '100%', overflow: 'hidden' }} className="flex flex-col md:flex-row">
+      {/* JARVIS sidebar — tablet and up. On a phone this took 270 of 375px and
+          left the health pages unreachable, so below md it becomes the
+          collapsible panel further down. */}
       <div
-        onDragOver={e => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => {
-          e.preventDefault()
-          setDragging(false)
-          const f = e.dataTransfer.files?.[0]
-          if (f) void upload(f)
-        }}
+        {...dropHandlers}
+        className="hidden md:flex"
         style={{
           width,
           background: '#fff',
           borderRight: '1px solid #e5e7eb',
-          display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
           transition: 'width .2s',
@@ -202,82 +287,68 @@ export default function HealthShell({ children }: Props) {
 
         {sidebarOpen && (
           <>
-            <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {messages.map((m, i) => (
-                <div key={i} style={{
-                  fontSize: 11, lineHeight: 1.5, padding: '7px 9px', borderRadius: 10, maxWidth: '95%',
-                  whiteSpace: 'pre-wrap',
-                  background: m.role === 'ai' ? '#eff6ff' : '#f3f4f6',
-                  border: `1px solid ${m.role === 'ai' ? '#dbeafe' : '#e5e7eb'}`,
-                  color: m.role === 'ai' ? '#1e40af' : '#374151',
-                  alignSelf: m.role === 'ai' ? 'flex-start' : 'flex-end',
-                }}>
-                  {m.text || (loading && m.role === 'ai' ? '…' : '')}
-                </div>
-              ))}
-
-              {uploading && (
-                <div style={{ fontSize: 11, color: '#6b7280', padding: '7px 9px' }}>Reading the document…</div>
-              )}
-
-              {pending.length > 0 && (
-                <PendingReview
-                  items={pending}
-                  onApply={applyPending}
-                  onDismiss={() => { setPending([]); say('Discarded the unconfirmed items.') }}
-                />
-              )}
-            </div>
-
-            {dragging && (
-              <div style={{ fontSize: 10, color: '#2563eb', fontWeight: 600, textAlign: 'center', padding: '0 10px 6px' }}>Drop to file it</div>
-            )}
-
-            <div style={{ padding: 8, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button
-                onClick={() => fileInput.current?.click()}
-                title="Attach a PDF or image"
-                style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8, color: '#6b7280', cursor: 'pointer', fontSize: 13, padding: '5px 9px', flexShrink: 0 }}
-              >📎</button>
-              <input
-                ref={fileInput}
-                type="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
-                onChange={e => {
-                  const f = e.target.files?.[0]
-                  if (f) void upload(f)
-                  e.target.value = ''
-                }}
-                style={{ display: 'none' }}
-              />
-              <input
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && send()}
-                placeholder="Ask, or paste a screenshot…"
-                style={{ flex: 1, minWidth: 0, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 10px', color: '#111', fontSize: 11, outline: 'none' }}
-              />
-            </div>
+            {conversation}
           </>
         )}
       </div>
 
       {/* Main area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 20px', display: 'flex', alignItems: 'center', height: 50, flexShrink: 0 }}>
+        <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', height: 44, flexShrink: 0, gap: 8 }}
+          className="px-3 md:px-5">
           <span style={{ fontSize: 14, fontWeight: 700 }}>Health Records</span>
+          {/* Phone-only JARVIS toggle. A second floating button would fight the
+              global orb, so the panel opens in place instead. */}
+          <button
+            onClick={() => setPanelOpen(o => !o)}
+            className="md:hidden"
+            style={{
+              marginLeft: 'auto', border: '1px solid #dbeafe', background: '#eff6ff',
+              color: '#1e40af', borderRadius: 8, padding: '5px 10px',
+              fontSize: 11, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            ◉ JARVIS{pending.length > 0 ? ` · ${pending.length}` : ''} {panelOpen ? '▴' : '▾'}
+          </button>
         </div>
-        <div style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 20px', display: 'flex', flexShrink: 0 }}>
+
+        {/* Phone JARVIS panel, in the flow rather than over the content. */}
+        {panelOpen && (
+          <div
+            {...dropHandlers}
+            className="md:hidden"
+            style={{
+              background: '#fff', borderBottom: '1px solid #e5e7eb', flexShrink: 0,
+              display: 'flex', flexDirection: 'column', height: '55vh',
+              outline: dragging ? '2px dashed #2563eb' : 'none', outlineOffset: -4,
+            }}
+          >
+            {conversation}
+          </div>
+        )}
+
+        {/* Eleven tabs at ~80px each need 880px. Below md they scroll sideways
+            rather than being clipped; -webkit-overflow-scrolling keeps the
+            momentum flick working on iOS. */}
+        <div
+          style={{
+            background: '#fff', borderBottom: '1px solid #e5e7eb', display: 'flex',
+            flexShrink: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+          }}
+          className="px-3 md:px-5"
+        >
           {TABS.map(tab => {
             const active = pathname.startsWith(tab.href)
             return (
               <button key={tab.href} onClick={() => router.push(tab.href)} style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                padding: '10px 18px', cursor: 'pointer', border: 'none', background: 'none',
+                padding: '9px 14px', cursor: 'pointer', border: 'none', background: 'none',
                 borderBottom: active ? '2px solid #111' : '2px solid transparent',
                 color: active ? '#111' : '#6b7280', fontSize: 10, fontWeight: 600,
+                flexShrink: 0, whiteSpace: 'nowrap',
               }}>
-                <span style={{ fontSize: 20 }}>{tab.icon}</span>
+                <span style={{ fontSize: 19 }}>{tab.icon}</span>
                 {tab.label}
               </button>
             )

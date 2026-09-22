@@ -57,7 +57,8 @@ export default function BloodPage() {
 
       {extractPreview && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: 480, maxHeight: '80vh', overflow: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: 480, maxWidth: '100%', maxHeight: '80vh', overflow: 'auto' }}
+            className="p-4 md:p-6">
             <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>Extracted markers</h3>
             <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 14 }}>{extractPreview.markers.length} markers found in {extractPreview.fileName}. Review before saving.</p>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>

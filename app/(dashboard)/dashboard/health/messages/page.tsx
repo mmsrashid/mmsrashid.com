@@ -13,8 +13,11 @@ export default function MessagesPage() {
   }, [])
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      <div style={{ width: 280, borderRight: '1px solid #e5e7eb', overflowY: 'auto', background: '#fff' }}>
+    <div style={{ height: '100%', overflow: 'hidden' }} className="flex">
+      <div
+        className={`${selected ? 'hidden md:block' : 'block'} w-full md:w-[280px] shrink-0`}
+        style={{ borderRight: '1px solid #e5e7eb', overflowY: 'auto', background: '#fff' }}
+      >
         <div style={{ padding: '12px 14px', borderBottom: '1px solid #f3f4f6', fontSize: 13, fontWeight: 700 }}>Health Messages</div>
         {loading && <p style={{ padding: 14, fontSize: 12, color: '#9ca3af' }}>Loading…</p>}
         {!loading && msgs.length === 0 && <p style={{ padding: 14, fontSize: 12, color: '#9ca3af' }}>No health-related messages found.</p>}
@@ -32,14 +35,26 @@ export default function MessagesPage() {
           </div>
         ))}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', background: '#fafafa' }}>
+      <div
+        className={`${selected ? 'block' : 'hidden md:block'} flex-1 min-w-0 p-4 md:p-6`}
+        style={{ overflowY: 'auto', background: '#fafafa' }}
+      >
         {!selected ? (
           <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 40, textAlign: 'center' }}>Select a message to read</p>
         ) : (
           <>
+            {/* Phone-only way back: with the list hidden there is otherwise no
+                route from a message to the other messages. */}
+            <button
+              onClick={() => setSelected(null)}
+              className="md:hidden"
+              style={{ border: '1px solid #d1d5db', background: '#fff', borderRadius: 8, padding: '5px 10px', fontSize: 12, marginBottom: 12, cursor: 'pointer' }}
+            >
+              ← All messages
+            </button>
             <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{selected.subject}</h2>
             <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 16 }}>From: {selected.from} · {selected.date}</p>
-            <div style={{ fontSize: 12, lineHeight: 1.7, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 12, lineHeight: 1.7, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, overflowX: 'auto', overflowWrap: 'anywhere' }}>
               {selected.html
                 ? <div dangerouslySetInnerHTML={{ __html: selected.html }} />
                 : <pre style={{ fontFamily: 'inherit', whiteSpace: 'pre-wrap' }}>{selected.text}</pre>}
